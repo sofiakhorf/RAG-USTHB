@@ -1,0 +1,12 @@
+# Traitement des documents PDF, DOCX et Excel
+PyMuPDF>=1.23.0        # Importé sous le nom 'fitz' (FallbackParser, Router, FamilyB, FamilyJ)
+python-docx>=1.0.0     # Importé sous le nom 'docx' (FamilyA, Router, FallbackParser)
+openpyxl>=3.1.0        # Manipulation des fichiers Excel (ExcelWorkbookParser, Router)
+pdfplumber>=0.10.0     # Extraction orientée tableau (FamilyG, FamilyH)
+
+# Traitement d'images et OCR
+pytesseract>=0.3.10    # Wrapper Python pour Tesseract OCR (FamilyI)
+Pillow>=10.0.0         # Importé sous le nom 'PIL' pour l'imagerie (FamilyI)
+
+# Modèles de données et validation
+pydantic>=2.0.0        # Validation et typage des métadonnées et chunks (models.py)
