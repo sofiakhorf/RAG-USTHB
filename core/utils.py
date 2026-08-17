@@ -2,6 +2,12 @@ import os
 import re
 import subprocess
 import pymupdf  # Remplacement de fitz
+
+
+import tempfile
+import shutil
+import logging
+from pathlib import Path
 from typing import Tuple, Dict, Optional
 
 from core.models import PipelineConfig
@@ -10,13 +16,60 @@ from core.models import PipelineConfig
 class SystemUtils:
     @staticmethod
     def convert_doc_to_docx(file_path: str, config: PipelineConfig) -> str:
-        if not file_path.lower().endswith('.doc'):
-            return file_path
-        
-        outdir = os.path.dirname(file_path) or "."
-        cmd = [config.libreoffice_path, "--headless", "--convert-to", "docx", file_path, "--outdir", outdir]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return file_path + "x"
+        path = Path(file_path).resolve()
+    
+        if not path.exists():
+            raise FileNotFoundError(f"Fichier introuvable : {path}")
+    
+        # Si c'est déjà un .docx, on le retourne directement
+        if path.suffix.lower() == '.docx':
+            return str(path)
+    
+        if path.suffix.lower() != '.doc':
+            return str(path)
+    
+        outdir = path.parent
+        expected_docx = path.with_suffix('.docx')
+    
+        # Si le .docx existe déjà (ex: conversion précédente réussie), on le retourne
+        if expected_docx.exists():
+            return str(expected_docx)
+    
+        # 1. CRÉER UN PROFIL TEMPORAIRE UNIQUE PAR WORKER/CONVERSION
+        unique_profile_dir = tempfile.mkdtemp(prefix="lo_profile_")
+        profile_uri = Path(unique_profile_dir).as_uri()
+    
+        cmd = [
+            config.libreoffice_path,
+            f"-env:UserInstallation={profile_uri}",
+            "--headless",
+            "--convert-to", "docx",
+            str(path),
+            "--outdir", str(outdir)
+        ]
+    
+        try:
+            result = subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30  # Timeout de précaution (30 secondes par fichier)
+            )
+    
+            if expected_docx.exists():
+                return str(expected_docx)
+            else:
+                logger.error(f"Echec de conversion pour {path.name}. STDOUT: {result.stdout}")
+                raise FileNotFoundError(f"Le fichier converti {expected_docx.name} n'a pas été généré.")
+    
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Erreur LibreOffice sur {path.name}: {e.stderr or e.stdout or 'Erreur inconnue'}")
+            raise RuntimeError(f"Échec de la conversion de {path.name}") from e
+    
+        finally:
+            # 2. NETTOYER LE DOSSIER TEMPORAIRE UNIQUE
+            shutil.rmtree(unique_profile_dir, ignore_errors=True)
 
     @staticmethod
     def check_pdf_fonts_and_info(file_path: str) -> Tuple[bool, str]:
