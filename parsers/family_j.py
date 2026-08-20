@@ -18,7 +18,12 @@ class FamilyJParser(BaseFamilyParser):
     Gère aussi les documents de répartition contenant des listes et petits tableaux.
     """
     
-    def parse(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
+    def parse(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None,
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
         chunks = []
         try:
             # --- AJOUT : Vérification sur le titre propre ---
@@ -26,11 +31,12 @@ class FamilyJParser(BaseFamilyParser):
 
             
             # 1. Si c'est l'organigramme pur (dessin vectoriel avec boîtes)
+            # (effective_start_line n'est pas transmis car la logique dépend de BBox absolues, pas de lignes de texte)
             if "organigramme" in title_to_check:
                 chunks.extend(self._parse_organigramme_boxes(file_path, document_title))
             # 2. Si c'est le document de répartition (texte, listes à puces, frises)
             else:
-                chunks.extend(self._parse_repartition_text(file_path, document_title))
+                chunks.extend(self._parse_repartition_text(file_path, document_title, effective_start_line))
                 
         except Exception as e:
             logger.error(f"Erreur d'extraction sémantique J sur {file_path}: {e}")
@@ -121,7 +127,12 @@ class FamilyJParser(BaseFamilyParser):
         doc.close()
         return chunks
 
-    def _parse_repartition_text(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
+    def _parse_repartition_text(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None,
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
         """Extrait les listes à puces et frises chronologiques des documents de répartition."""
         chunks = []
         doc = pymupdf.open(file_path)
@@ -131,6 +142,14 @@ class FamilyJParser(BaseFamilyParser):
             text = page.get_text()
             if not text.strip(): 
                 continue
+                
+            # --- AJOUT : Tronquer l'en-tête institutionnel sur la 1ère page ---
+            if page_num == 0 and effective_start_line > 0:
+                lines = text.split('\n')
+                if effective_start_line < len(lines):
+                    text = "\n".join(lines[effective_start_line:])
+                else:
+                    text = ""
             
             # Nettoyage des numéros de page/dates parasites (ex: "1/10/2022 2")
             lines = text.split('\n')

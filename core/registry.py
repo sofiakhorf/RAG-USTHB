@@ -2,18 +2,19 @@ from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Type
 from core.models import PipelineConfig, Chunk
 
-from abc import ABC, abstractmethod
-
-
-
 
 class BaseFamilyParser(ABC):
     def __init__(self, config: Optional[PipelineConfig] = None):
         self.config = config or PipelineConfig()
 
     @abstractmethod
-    def parse(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
-      pass
+    def parse(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None, 
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
+        pass
        
 
 class ParserRegistry:

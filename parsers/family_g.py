@@ -55,12 +55,31 @@ class FamilyGParser(BaseFamilyParser):
     FOOTER_RE_ADMIS = re.compile(r"Nombre total [ée]tudiants admis\s*:?\s*(\d+)")
     FOOTER_RE_NONVALIDE = re.compile(r"n[’']ayant pas valid[ée]\s*(\d+)")
 
-    def parse(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
+    def parse(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None,
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
         # --- AJOUT : Détermination du titre propre ---
         clean_title = document_title if document_title else os.path.basename(file_path)
+        chunks: List[Chunk] = []
         try:
             with pdfplumber.open(file_path) as pdf:
-                full_text = "\n".join((p.extract_text() or "") for p in pdf.pages)
+                
+                # --- MODIFICATION : Application de effective_start_line 
+                pages_text = []
+                for i, p in enumerate(pdf.pages):
+                    page_text = p.extract_text() or ""
+                    if effective_start_line > 0:
+                        lines = page_text.split('\n')
+                        if effective_start_line < len(lines):
+                            page_text = "\n".join(lines[effective_start_line:])
+                        else:
+                            page_text = ""
+                    pages_text.append(page_text)
+                    
+                full_text = "\n".join(pages_text)
                 doc_meta = self._extract_document_meta(full_text)
 
                 last_columns: Optional[List[str]] = None

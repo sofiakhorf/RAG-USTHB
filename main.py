@@ -20,7 +20,7 @@ logger = logging.getLogger("RAG_Main")
 # Ajout des extensions Excel (.xlsx, .xls)
 VALID_EXTENSIONS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".vsdx", ".drawio", ".png", ".xlsx", ".xls"}
 
-def display_chunks_summary(chunks: list):
+def display_chunks_summary(chunks: list, full_text: bool = False):
     """Affiche un résumé propre des chunks dans le terminal."""
     print("\n" + "=" * 70)
     print(f" MÉTADONNÉES EXTRAITES ({len(chunks)} CHUNKS GÉNÉRÉS)")
@@ -37,15 +37,31 @@ def display_chunks_summary(chunks: list):
         print(f"  📅 Année Univ.       : {meta.annee_universitaire or 'N/A'}")
         print(f"  📑 Page              : {meta.page if meta.page is not None else 'N/A'}")
         print(f"  ⚙️  Mode Fallback     : {meta.is_fallback}")
-        print(f"  📝 Extrait de texte  : {chunk.text[:120].strip().replace('\n', ' ')}...")
-        print("-" * 50)
+        
+        # --- NOUVELLE LOGIQUE D'AFFICHAGE DU TEXTE ---
+        if full_text:
+            print("\n  📝 CONTENU TEXTUEL INTÉGRAL :")
+            # On utilise un délimiteur clair pour séparer le texte des métadonnées
+            print("  " + "-" * 66)
+            # On indente légèrement le texte pour qu'il soit bien aligné
+            for line in chunk.text.split('\n'):
+                print(f"  | {line}")
+            print("  " + "-" * 66)
+        else:
+            # Ancien comportement (résumé)
+            print(f"  📝 Extrait de texte  : {chunk.text[:120].strip().replace(chr(10), ' ')}...")
+        
+        print("-" * 70)
 
 def main():
     # 1. Arguments
     parser = argparse.ArgumentParser(description="Pipeline d'ingestion RAG USTHB")
     parser.add_argument("--input-dir", type=str, default="data", help="Dossier contenant les documents")
-    # Changement du fichier par défaut en .jsonl
     parser.add_argument("--output-file", type=str, default="chunks_output.jsonl", help="Fichier JSONL de sortie")
+    
+    # --- NOUVEL ARGUMENT POUR LE DÉBOGAGE ---
+    parser.add_argument("--full-text", action="store_true", help="Mode test : Affiche l'intégralité du texte extrait pour chaque chunk")
+    
     parser.add_argument("--quiet", action="store_true", help="Désactive l'affichage détaillé dans la console")
     args = parser.parse_args()
 
@@ -78,16 +94,14 @@ def main():
 
     # 5. Affichage optionnel (si pas en mode --quiet)
     if not args.quiet and chunks:
-        display_chunks_summary(chunks)
+        # On passe le flag full_text à la fonction d'affichage
+        display_chunks_summary(chunks, full_text=args.full_text)
 
     # 6. Exportation JSONL (Streaming pour optimiser la mémoire)
     try:
         with open(output_path, "w", encoding="utf-8") as f:
-            # Au lieu de tout stocker dans une liste, on écrit ligne par ligne
             for chunk in chunks:
-                # Conversion du chunk en dictionnaire puis en chaîne JSON
                 chunk_json = json.dumps(chunk.model_dump(), ensure_ascii=False)
-                # Écriture de la ligne + saut de ligne (\n)
                 f.write(chunk_json + "\n")
                 
         logger.info(f"Succès ! {len(chunks)} chunks exportés (format JSONL) dans '{output_path.resolve()}'.")

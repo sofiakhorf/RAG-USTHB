@@ -1,6 +1,3 @@
-
-
-
 import os
 import re
 import logging
@@ -42,7 +39,12 @@ class FamilyIParser(BaseFamilyParser):
     DATE_RE = re.compile(r"(\d{1,2}[/\.]\d{1,2}[/\.]\d{2,4})")
     LOT_RE = re.compile(r"LOT\s*N[°ʹ']?\s*\d+.*", re.IGNORECASE)
 
-    def parse(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
+    def parse(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None,
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
         # --- AJOUT : Détermination du titre propre ---
         clean_title = document_title if document_title else os.path.basename(file_path)
         chunks = []
@@ -54,6 +56,14 @@ class FamilyIParser(BaseFamilyParser):
                 self._crop_image(img, *self.ZONES["meta"]), 
                 lang=self.config.tesseract_lang_fra
             )
+            
+            # --- AJOUT : Troncature dynamique si des lignes excédentaires passent la coupe zonée ---
+            if effective_start_line > 0:
+                meta_lines = meta_text.split('\n')
+                if effective_start_line < len(meta_lines):
+                    meta_text = "\n".join(meta_lines[effective_start_line:])
+                else:
+                    meta_text = ""
             
             # 2. OCR ciblé sur la zone corps (texte utile, listes)
             corps_text = pytesseract.image_to_string(

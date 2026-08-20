@@ -12,7 +12,12 @@ from parsers.fallback import FallbackParser
 
 @ParserRegistry.register("B")
 class FamilyBParser(BaseFamilyParser):
-    def parse(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
+    def parse(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None,
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
         # Détermination du titre propre
         clean_title = document_title if document_title else os.path.basename(file_path)
         chunks = []
@@ -76,7 +81,7 @@ class FamilyBParser(BaseFamilyParser):
                 # Éviter de ré-extraire le texte situé à l'intérieur d'un tableau
                 is_inside_table = False
                 for tx0, ty0, tx1, ty1 in table_bboxes:
-                    if bx0 >= tx0 and by0 >= ty0 and bx1 <= tx1 and by1 <= ty1:
+                    if bx0 >= tx0 and py0 >= ty0 and bx1 <= tx1 and py1 <= ty1:
                         is_inside_table = True
                         break
                 

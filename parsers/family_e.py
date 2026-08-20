@@ -1,16 +1,13 @@
-
 import re
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+import os
 import pdfplumber
 
 from core import Chunk, ChunkMetadata, BaseFamilyParser, ParserRegistry
 from core.utils import SystemUtils, AcademicMetadataExtractor
 from parsers.fallback import FallbackParser
-
-
-
 
 
 @dataclass
@@ -195,7 +192,12 @@ class FamilyEParser(BaseFamilyParser):  # <-- AJOUT : Héritage de la classe de 
 
         return raw_data
 
-    def parse(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
+    def parse(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None,
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
         """Parcourt le PDF, extrait les métadonnées d'en-tête et du tableau, et génère des Chunks."""
         clean_title = document_title if document_title else os.path.basename(file_path)
         chunks: List[Chunk] = []
@@ -219,6 +221,13 @@ class FamilyEParser(BaseFamilyParser):  # <-- AJOUT : Héritage de la classe de 
 
                 # 1. Extraction et mise à jour des métadonnées d'en-tête de la page
                 page_text = page.extract_text() or ""
+                
+                # --- AJOUT : Tronquer l'en-tête institutionnel avant l'extraction des métadonnées ---
+                if  effective_start_line > 0:
+                    text_lines = page_text.split('\n')
+                    if effective_start_line < len(text_lines):
+                        page_text = "\n".join(text_lines[effective_start_line:])
+                        
                 header_meta = self.extract_header_metadata(page_text)
                 for meta_key, meta_val in header_meta.items():
                     if meta_val:

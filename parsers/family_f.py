@@ -14,7 +14,12 @@ logger = logging.getLogger("RAG_USTHB_OCR")
 
 @ParserRegistry.register("F")
 class FamilyFParser(BaseFamilyParser):
-    def parse(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
+    def parse(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None,
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
         # --- AJOUT : Détermination du titre propre ---
         clean_title = document_title if document_title else os.path.basename(file_path)
         ocr_pages = []
@@ -33,11 +38,17 @@ class FamilyFParser(BaseFamilyParser):
                     text = pytesseract.image_to_string(img, lang=tesseract_langs, config="--psm 4")
                     ocr_pages.append(text)
         except Exception as e:
-            logger.error(f"Échec de l'OCR sur {filename} : {e}")
+            logger.error(f"Échec de l'OCR sur {file_path} : {e}")
             # Assurez-vous que FallbackParser est bien importé/défini
             return FallbackParser.parse_safe(file_path, "F")
 
         full_text = "\n".join(ocr_pages)
+
+        # --- AJOUT : Tronquer l'en-tête institutionnel post-OCR ---
+        if effective_start_line > 0:
+            lines = full_text.split('\n')
+            if effective_start_line < len(lines):
+                full_text = "\n".join(lines[effective_start_line:])
 
         # : Regex tolérante et bilingue pour les Articles
         # - Art\.? : Accepte "Art." et "Art " (corrige le bug de arrete71403nov2011)

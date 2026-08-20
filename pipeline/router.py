@@ -21,9 +21,10 @@ from typing import Tuple, Optional, List, Dict
 import pymupdf
 import openpyxl
 from docx import Document
+from docx.document import Document as _Document
 from docx.oxml.table import CT_Tbl
 from docx.oxml.text.paragraph import CT_P
-from docx.table import Table
+from docx.table import Table, _Cell
 from docx.text.paragraph import Paragraph
 
 # --- Imports pour le core ---
@@ -42,14 +43,22 @@ def iter_block_items(parent):
     Génère les paragraphes et les tableaux dans l'ordre visuel exact du document.
     Indispensable pour que le routeur lise le tableau de l'en-tête USTHB 
     (qui contient souvent République/Ministère/Université) avant le corps du texte.
+
+    BUGFIX : la version précédente faisait `parent.element.iterchildren()`.
+    Pour un `Document` entier, `parent.element` est la racine `<w:document>`,
+    dont l'UNIQUE enfant est `<w:body>` -- donc la boucle ne trouvait jamais
+    aucun `<w:p>`/`<w:tbl>` et retournait toujours 0 bloc (extraction de
+    titre depuis le contenu silencieusement cassée pour tous les .docx/.doc).
+    Il faut itérer sur `parent.element.body` pour un Document, ou sur
+    `parent._tc` pour une Cell de tableau.
     """
-    if hasattr(parent, "element"):
-        parent_elm = parent.element
-    elif hasattr(parent, "_element"):
-        parent_elm = parent._element
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
     else:
-        parent_elm = parent
-        
+        raise ValueError(f"iter_block_items: type de parent non supporté ({type(parent)})")
+
     for child in parent_elm.iterchildren():
         if isinstance(child, CT_P):
             yield Paragraph(child, parent)
@@ -504,7 +513,13 @@ class DocumentRouter:
         ext = file_path_obj.suffix.lower()
 
         # -------------------------------------------------------------
-        # 1. Règles absolues par extension (AUCUN I/O disque, ultra rapide)
+        # 1. Règles absolues par extension SANS AUCUN contenu texte
+        # possible (images, formats vectoriels) -> aucun I/O, titre = nom
+        # de fichier nettoyé. NE PAS ajouter .xlsx/.xls ici : contrairement
+        # aux jpg/vsdx, un xlsx a un contenu textuel exploitable (cellules),
+        # donc il doit passer par _get_effective_title_and_index comme les
+        # pdf/docx pour bénéficier de l'extraction de titre depuis le
+        # contenu quand son nom de fichier est opaque.
         # -------------------------------------------------------------
         if ext in [".jpg", ".jpeg"]: 
             return "I", self._clean_filename_title(file_path_obj.stem), 0
@@ -513,15 +528,16 @@ class DocumentRouter:
         if ext in family_j_extensions: 
             return "J", self._clean_filename_title(file_path_obj.stem), 0
 
-        if ext in [".xlsx", ".xls"]: 
-            return "EXCEL", self._clean_filename_title(file_path_obj.stem), 0
-
         # -------------------------------------------------------------
         # 2. Extraction I/O unique (Lecture disque coûteuse)
         # -------------------------------------------------------------
-        # On ne lit le fichier QUE si c'est un PDF/DOCX potentiellement textuel
+        # pdf / docx / doc / xlsx / xls passent tous ici : un seul appel,
+        # un seul parsing du fichier, quel que soit le format.
         effective_title, effective_start_line = self._get_effective_title_and_index(file_path)
         effective_title_clean = effective_title.lower() if effective_title else ""
+
+        if ext in [".xlsx", ".xls"]:
+            return "EXCEL", effective_title, effective_start_line
 
         # -------------------------------------------------------------
         # 3. Logique de classification par mots-clés (Utilisation du dictionnaire)

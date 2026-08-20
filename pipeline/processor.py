@@ -46,17 +46,20 @@ def _process_single_document_worker(file_path: str, config: PipelineConfig) -> L
     # aura des valeurs valides même si le routeur crashe.
     family = "UNKNOWN"
     effective_title = None
+    effective_start_line = 0
     
     try:
-        # 1. Déballage du tuple à 3 éléments renvoyé par classify_document
-        family, prepared_path, effective_title = DocumentRouter.classify_document(file_path, config)
+        # 1. Déballage du tuple à 4 éléments renvoyé par classify_document
+        family, prepared_path, effective_title, effective_start_line = DocumentRouter.classify_document(file_path, config)
         
         # 2. Récupération et exécution du parseur métier
         parser = ParserRegistry.get_parser(family, config)
         
-
-        
-        return parser.parse(prepared_path, document_title=effective_title)
+        return parser.parse(
+            prepared_path, 
+            document_title=effective_title, 
+            effective_start_line=effective_start_line
+        )
 
     except Exception as e:
         logger.error(f"Erreur durant le parsing de {file_path}: {e}")

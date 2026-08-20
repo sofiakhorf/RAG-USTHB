@@ -280,7 +280,12 @@ class ExcelWorkbookParser(BaseFamilyParser):
     
         return has_type and has_subject and has_level
 
-    def parse(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
+    def parse(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None,
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
         # --- AJOUT : Injection du titre propre ---
         filename = document_title if document_title else os.path.basename(file_path)
         file_meta = AcademicMetadataExtractor.extract_from_text(filename)
@@ -296,7 +301,9 @@ class ExcelWorkbookParser(BaseFamilyParser):
             
             for (r0, r1) in blocks:
                 block_max_c = ExcelSegmentationUtils.get_block_max_column(ws, r0, r1)
-                
+                if r1 < effective_start_line:
+                   continue
+                r0 = max(r0, effective_start_line) # Ajuster le début du bloc si ça chevauche
                 # 1. Extraction du titre et séparation du vrai tableau
                 table_r0, table_r1, titre_bloc = ExcelSegmentationUtils.refine_block_title_and_bounds(
                     ws, r0, r1, block_max_c

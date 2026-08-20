@@ -1,7 +1,3 @@
-
-
-
-
 import re
 import os
 import logging
@@ -37,15 +33,30 @@ class FamilyHParser(BaseFamilyParser):
         "date_version": re.compile(r"Date:\s*([\d/]+)"),
     }
 
-    def parse(self, file_path: str, document_title: Optional[str] = None) -> List[Chunk]:
+    def parse(
+        self, 
+        file_path: str, 
+        document_title: Optional[str] = None,
+        effective_start_line: int = 0
+    ) -> List[Chunk]:
         # --- AJOUT : Détermination du titre propre ---
         clean_title = document_title if document_title else os.path.basename(file_path)
         chunks = []
         try:
             with pdfplumber.open(file_path) as pdf:
                 full_text = ""
-                for page in pdf.pages:
-                    full_text += page.extract_text() + "\n"
+                for i, page in enumerate(pdf.pages):
+                    page_text = page.extract_text() or ""
+                    
+                    # --- AJOUT : Tronquer l'en-tête institutionnel sur la 1ère page ---
+                    if  effective_start_line > 0:
+                        lines = page_text.split('\n')
+                        if effective_start_line < len(lines):
+                            page_text = "\n".join(lines[effective_start_line:])
+                        else:
+                            page_text = ""
+                            
+                    full_text += page_text + "\n"
                 
                 # 1. Extraction des métadonnées globales
                 metadata = {}
