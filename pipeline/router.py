@@ -95,7 +95,8 @@ class DocumentRouter:
             "canevas", "programmes modules", "programme module", "syllabus", 
             "fiche de voeux", "fiche de vœux", "tronc commun ingénieur d'etat en informatique",
             "canevas de mise en conformité", "offre de formation", 
-            "licence professionnalisante ", "master professionnalisant"
+            "licence professionnalisante ", "master professionnalisant",
+            "cahier des charges", "intitulé de la licence"
         ],
         # --- Mots-clés Décrets / Juridique ---
         "F": [

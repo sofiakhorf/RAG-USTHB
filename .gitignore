@@ -26,3 +26,16 @@ __pycache__/
 
 # Checkpoints Jupyter / VS Code
 .ipynb_checkpoints/
+
+
+
+# Fichiers d'audit et de rapports temporaires
+audit_analysis.py
+audit_detailed_output.txt
+audit_parsing_report.md
+audit_phase3.py
+audit_phase3b.py
+audit_results.json
+audit_script.py
+check_deps.py
+prompt_audit_parsers (1).md

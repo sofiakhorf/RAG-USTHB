@@ -1,5 +1,8 @@
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import logging
 from typing import List, Optional, Tuple
 
@@ -7,6 +10,11 @@ import pdfplumber
 from docx import Document
 from docx.text.paragraph import Paragraph
 from docx.table import Table
+
+try:
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None
 
 from core import Chunk, ChunkMetadata, BaseFamilyParser, ParserRegistry
 from parsers.fallback import FallbackParser
@@ -17,6 +25,15 @@ logger = logging.getLogger(__name__)
 _FILLER_RUN_RE = re.compile(r'[.\u2026_]{4,}')
 _CHECKBOX_RE = re.compile(r'[\u2610\u2611\u2612\u25a2\u25a1]')
 _HTML_TAG_RE = re.compile(r'<[^>]+>')
+
+# Marqueur (zone d'usage privé Unicode, ne peut jamais apparaître dans un
+# texte réel) préfixé aux lignes déjà "aplaties sémantiquement" par
+# _classify_and_flatten_table (voir plus bas). Ces lignes sont déjà des
+# phrases finales "Label : Valeur, Label2 : Valeur2" — les repasser dans le
+# formateur générique _format_kv_line les redécoupe et les abîme (il
+# réinterprète les ":" et "," comme de nouveaux délimiteurs de champ). Le
+# marqueur permet à parse() de les reconnaître et de les laisser intactes.
+_SEMANTIC_MARK = '\uE000'
 
 
 def _dedupe_consecutive(items: List[str]) -> List[str]:
@@ -32,6 +49,216 @@ def _clean_line(text: str) -> str:
     """Supprime les balises HTML/XML résiduelles et normalise les espaces."""
     text = _HTML_TAG_RE.sub('', text)
     return re.sub(r'\s+', ' ', text).strip()
+
+
+def _looks_like_option_list(text: str) -> bool:
+    """
+    Détecte une liste d'options/cases à cocher (ex: "L1 ING1 L2 ING2 L3 ING3
+    M1 M2", "OUI NON") : uniquement des jetons courts, tout en majuscules
+    (codes de filière, sigles), pas de mots de phrase ordinaire en minuscule.
+    Sert à rattacher une telle ligne à l'intitulé/question qui la précède,
+    même quand cet intitulé est trop long pour être un "label" de champ.
+    """
+    tokens = text.split()
+    if not tokens:
+        return False
+    if all(re.fullmatch(r'[A-Z0-9]{1,6}', tok) for tok in tokens):
+        return True
+    # Options à plusieurs mots séparées par "|" — notre propre marqueur
+    # interne de colonnes (jamais présent dans une phrase normale), ex:
+    # "Congé Académique | Abandon Dépassement du nombre d'années autorisées".
+    if '|' in text and len(tokens) <= 20:
+        return True
+    # Options marquées par des cases à cocher dessinées détectées en amont
+    # (voir _mark_drawn_checkboxes) : "[ ] Congé Académique [ ] Abandon
+    # [ ] Dépassement...". Au moins 2 marqueurs "[ ]" = liste d'options,
+    # même si les libellés eux-mêmes sont de vrais mots de phrase.
+    if text.count('[ ]') >= 2:
+        return True
+    return False
+
+
+# --- Cases à cocher dessinées (VML / DrawingML) -----------------------------
+# Certains formulaires (convertis depuis un .doc ancien) ne codent pas leurs
+# cases à cocher en caractères Unicode (☐/☑) mais en petites FORMES dessinées
+# (rectangles arrondis VML, ou images DrawingML) positionnées par-dessus le
+# texte. python-docx ignore totalement ces objets dans Paragraph.text : la
+# case est invisible, seul le libellé de l'option ("OUI", "L1"...) reste,
+# sans aucun signe qu'il s'agit d'un choix à cocher.
+_W_NS = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+_V_NS = '{urn:schemas-microsoft-com:vml}'
+_WP_NS = '{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}'
+_VML_SIZE_RE = re.compile(r'width:\s*([\d.]+)pt;\s*height:\s*([\d.]+)pt')
+_EMU_PER_PT = 12700  # 12700 EMU = 1 point
+
+
+def _is_checkbox_sized(width_pt: float, height_pt: float) -> bool:
+    """Une vraie case à cocher est petite et à peu près carrée — pas un logo,
+    une photo, ou une zone de texte (souvent >50-100pt de large)."""
+    if width_pt <= 0 or height_pt <= 0 or width_pt > 30 or height_pt > 30:
+        return False
+    ratio = width_pt / height_pt
+    return 0.4 <= ratio <= 2.5
+
+
+def _paragraph_has_checkbox_drawing(p_element) -> bool:
+    """
+    Repère, dans le XML d'un paragraphe, une forme VML (w:pict > v:rect /
+    v:roundrect / v:oval / v:shape) ou DrawingML (w:drawing > wp:extent) dont
+    la taille correspond à une case à cocher.
+    """
+    for shape_tag in ('rect', 'roundrect', 'oval', 'shape'):
+        for shape in p_element.findall(f'.//{_V_NS}{shape_tag}'):
+            style = shape.get('style', '') or ''
+            m = _VML_SIZE_RE.search(style)
+            if m and _is_checkbox_sized(float(m.group(1)), float(m.group(2))):
+                return True
+
+    for extent in p_element.findall(f'.//{_WP_NS}extent'):
+        try:
+            cx, cy = float(extent.get('cx', 0)), float(extent.get('cy', 0))
+        except (TypeError, ValueError):
+            continue
+        if _is_checkbox_sized(cx / _EMU_PER_PT, cy / _EMU_PER_PT):
+            return True
+
+    return False
+
+
+def _mark_drawn_checkboxes(text: str) -> str:
+    """
+    Insère un marqueur "[ ]" devant chaque option d'une ligne détectée comme
+    porteuse de cases à cocher dessinées (voir _paragraph_has_checkbox_drawing).
+
+    On se limite volontairement aux paragraphes qui ressemblent déjà à une
+    LISTE D'OPTIONS (ne se terminent pas par ':' ou '?') : les formes VML de
+    ces formulaires sont positionnées en absolu ("position:absolute"), donc
+    rattachées dans le XML au paragraphe le plus proche mais pas forcément au
+    bon — les rattacher malgré tout à une phrase/question ("Je sollicite...
+    à l'année d'étude :") produirait un "[ ]" placé n'importe où, trompeur.
+    Sur une ligne d'options courtes, en revanche, préfixer CHAQUE groupe
+    séparé par un grand espace reste correct même sans correspondance
+    exacte case-par-case.
+    """
+    stripped = text.strip()
+    if not stripped or stripped.rstrip().endswith((':', '?')):
+        return text
+
+    groups = [g for g in re.split(r'[ \t]{2,}', stripped) if g.strip()]
+    if len(groups) < 2:
+        return text
+
+    return ' '.join(f'[ ] {g.strip()}' for g in groups)
+
+
+def _classify_and_flatten_table(rows: List[List[str]]) -> List[str]:
+    """
+    Transforme les lignes brutes d'un tableau (cellules NON filtrées, y
+    compris les vides, pour garder la correspondance de position) en lignes
+    de texte, selon deux cas :
+
+    1. TABLEAU DE DONNÉES (ex: relevé de notes avec colonnes "Code / Intitulé
+       / Crédits / Grade / Date" répétées sur de nombreuses lignes) :
+       "aplatissement sémantique" — chaque cellule non vide est associée au
+       nom de sa colonne d'en-tête plutôt que simplement juxtaposée par des
+       "|", ce qui est bien plus exploitable pour la recherche RAG qu'un
+       "A | 10% premiers" où l'on ne sait plus quelle valeur va avec quelle
+       colonne dès qu'une cellule vide a été supprimée.
+    2. FORMULAIRE LABEL/VALEUR (immense majorité des tableaux de ces
+       documents : chaque ligne est UN SEUL champ, souvent étalé sur
+       plusieurs cellules fusionnées horizontalement) : comportement
+       classique conservé (dédoublonnage + jointure "|" des cellules non
+       vides).
+
+    La distinction entre les deux repose sur la variation colonne par
+    colonne : dans un vrai tableau de données, chaque ligne combine
+    PLUSIEURS valeurs différentes ; dans un formulaire label/valeur, chaque
+    ligne ne porte qu'UNE seule information répétée par fusion de cellules
+    (gridSpan) — ratio valeurs-distinctes/valeurs-non-vides proche de 0.
+    """
+    if not rows:
+        return []
+
+    n_cols = max((len(r) for r in rows), default=0)
+    padded = [r + [''] * (n_cols - len(r)) for r in rows]
+    header, data_rows = padded[0], padded[1:]
+
+    def non_empty(row):
+        return [_clean_line(c) for c in row if _clean_line(c)]
+
+    def distinct_ratio(row):
+        ne = non_empty(row)
+        return (len(set(ne)) / len(ne)) if ne else 0.0
+
+    header_values = non_empty(header)
+    is_header_candidate = (
+        n_cols >= 3
+        and len(data_rows) >= 2
+        and len(header_values) >= max(2, n_cols // 2)
+        and len(set(header_values)) >= 2
+        and all(len(_clean_line(c)) <= 80 for c in header)
+    )
+
+    if is_header_candidate:
+        well_varied = sum(1 for r in data_rows if distinct_ratio(r) >= 0.5)
+        is_header_candidate = well_varied >= max(2, len(data_rows) // 2)
+
+    if not is_header_candidate:
+        lines = []
+        for row in padded:
+            cells = _dedupe_consecutive([_clean_line(c) for c in row if _clean_line(c)])
+            if cells:
+                lines.append(" | ".join(cells))
+        return lines
+
+    lines = []
+    for row in data_rows:
+        ne = non_empty(row)
+        # Ligne "diviseur de section" (ex: "Premier semestre / Deuxième
+        # semestre" fusionnée sur toute la largeur) : peu de valeurs
+        # DISTINCTES pour beaucoup de cellules non vides -> ce n'est pas un
+        # enregistrement à apparier avec l'en-tête, mais un simple titre.
+        if ne and (len(set(ne)) / len(ne)) < 0.5:
+            distinct_vals = list(dict.fromkeys(ne))
+            lines.append(_SEMANTIC_MARK + " / ".join(distinct_vals))
+            continue
+
+        pairs = []
+        for idx, cell in enumerate(row):
+            cell = _clean_line(cell)
+            if not cell:
+                continue
+            head = _clean_line(header[idx]) if idx < len(header) else ""
+            pairs.append((head, cell))
+
+        pairs = _dedupe_row_units(pairs)
+        if pairs:
+            lines.append(_SEMANTIC_MARK + ", ".join(f"{h} : {v}" if h else v for h, v in pairs))
+
+    return lines
+
+
+def _dedupe_row_units(pairs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+    """
+    Dédoublonne les paires (en-tête, valeur) consécutives strictement
+    identiques au sein d'une même ligne de données déjà appariée à son
+    en-tête. Nécessaire car une cellule fusionnée horizontalement (gridSpan)
+    répète la MÊME valeur sur chaque position de grille sous-jacente : sans
+    ceci, une ligne comme celle du relevé de notes produirait "Code : U.E.F1.1,
+    Code : U.E.F1.1, Intitulé de l'UE : ..." au lieu de "Code : U.E.F1.1,
+    Intitulé de l'UE : ...".
+
+    Différent de _dedupe_consecutive : celui-ci opère sur des cellules brutes
+    AVANT tout appariement positionnel (utilisé pour le repli formulaire
+    label/valeur), alors que celui-ci opère APRÈS appariement, sur les
+    couples (en-tête, valeur) déjà formés, pour ne jamais décaler les
+    positions pendant l'appariement lui-même.
+    """
+    out = []
+    for pair in pairs:
+        if not out or out[-1] != pair:
+            out.append(pair)
+    return out
 
 
 def _is_valid_label(label: str) -> bool:
@@ -102,6 +329,13 @@ def _split_value_and_label(text_between: str) -> Tuple[str, str]:
 @ParserRegistry.register("A")
 class FamilyAParser(BaseFamilyParser):
 
+    # Extensions Word "binaires" historiques. Le pipeline d'ingestion est
+    # censé déjà les convertir en .docx en amont — mais si cette conversion
+    # externe échoue ou est court-circuitée pour un fichier donné (observé
+    # en production), ce parser sait s'en charger lui-même plutôt que
+    # d'échouer en essayant de lire un .doc comme s'il s'agissait d'un PDF.
+    LEGACY_WORD_EXTENSIONS = {".doc", ".dot", ".rtf"}
+
     def parse(
         self,
         file_path: str,
@@ -118,11 +352,37 @@ class FamilyAParser(BaseFamilyParser):
                 "FamilyAParser: extraction failed for %s (%s: %s) — falling back to FallbackParser",
                 file_path, type(exc).__name__, exc
             )
-            return FallbackParser().parse(
-                file_path,
-                document_title=document_title,
-                effective_start_line=effective_start_line
-            )
+            try:
+                fallback = FallbackParser()
+                if not hasattr(fallback, "parse"):
+                    raise AttributeError(
+                        f"FallbackParser ({type(fallback).__module__}.{type(fallback).__name__}) "
+                        "n'expose pas de méthode .parse()"
+                    )
+                return fallback.parse(
+                    file_path,
+                    document_title=document_title,
+                    effective_start_line=effective_start_line
+                )
+            except Exception as fallback_exc:
+                # Le FallbackParser peut lui-même ne pas exposer la méthode
+                # ou la signature attendue (observé en production :
+                # "'FallbackParser' object has no attribute 'parse'"), ou
+                # échouer à son tour sur un fichier réellement illisible.
+                # Dans ce cas, on NE LAISSE PAS remonter une seconde
+                # exception qui masquerait la cause réelle (ici, l'erreur
+                # originale de python-docx/pdfplumber sur le fichier) et
+                # compliquerait le diagnostic côté pipeline : on journalise
+                # les deux échecs clairement et on renvoie une liste vide,
+                # pour que seul CE fichier soit ignoré plutôt que de faire
+                # planter toute l'ingestion.
+                logger.error(
+                    "FamilyAParser: le repli vers FallbackParser a lui aussi échoué pour %s "
+                    "(%s: %s) — fichier ignoré. Cause originale : %s: %s",
+                    file_path, type(fallback_exc).__name__, fallback_exc,
+                    type(exc).__name__, exc
+                )
+                return []
 
         if effective_start_line > 0 and effective_start_line < len(raw_lines):
             raw_lines = raw_lines[effective_start_line:]
@@ -138,14 +398,28 @@ class FamilyAParser(BaseFamilyParser):
             if c_line and not re.fullmatch(r'[.\u2026_\s]{4,}', c_line):
                 cleaned_raw_lines.append(c_line)
 
-        
+        raw_lines = cleaned_raw_lines
 
         # Post-traitement des couples Label/Valeur
+        
         final_lines = []
         i = 0
         while i < len(raw_lines):
             line = raw_lines[i]
+
+            # Lignes déjà aplaties sémantiquement (tableau de données) :
+            # on les restitue telles quelles, sans repasser par le
+            # formateur label/valeur générique qui les redécouperait à tort.
+            if line.startswith(_SEMANTIC_MARK):
+                final_lines.append(line[len(_SEMANTIC_MARK):])
+                i += 1
+                continue
+
             next_line = raw_lines[i + 1] if (i + 1) < len(raw_lines) else None
+            if next_line is not None and next_line.startswith(_SEMANTIC_MARK):
+                # Une ligne sémantique déjà finalisée n'est jamais une
+                # simple valeur/option à "avaler" pour le champ précédent.
+                next_line = None
 
             formatted_line, consumed_next = self._format_kv_line(line, next_line)
             if formatted_line.strip():
@@ -159,7 +433,13 @@ class FamilyAParser(BaseFamilyParser):
         raw_text = "\n".join(final_lines)
 
         # Extraction propre des labels pour le header LLM
-        labels = re.findall(r'([A-Za-zÀ-ÿ][^:?|\n]{1,60}?)\s*[:?]', raw_text)
+        # NB : ',' est exclu de la classe de caractères en plus de ':?|\n' —
+        # sans cela, sur une ligne aplatie sémantiquement ("Header1 : val1,
+        # Header2 : val2"), le label capturé pour le second délimiteur
+        # remontait jusqu'à englober "val1, Header2" au lieu de "Header2"
+        # seul (la virgule sert justement de séparateur entre couples dans
+        # ces lignes-là).
+        labels = re.findall(r'([A-Za-zÀ-ÿ][^:?|\n,]{1,60}?)\s*[:?]', raw_text)
         clean_labels = []
         for l in labels:
             lbl = l.strip()
@@ -185,8 +465,56 @@ class FamilyAParser(BaseFamilyParser):
     def _extract_raw_lines(self, file_path: str, ext: str) -> List[str]:
         if ext == '.docx':
             return self._extract_from_docx(file_path)
+        elif ext in self.LEGACY_WORD_EXTENSIONS:
+            # Filet de sécurité : normalement déjà converti en amont du
+            # pipeline, mais si ce fichier précis a échappé à cette étape
+            # (conversion externe en échec, non déclenchée, etc.), on tente
+            # de le convertir nous-mêmes plutôt que d'essayer de le lire
+            # comme un PDF (ce qui échoue toujours et produit une erreur
+            # confuse, sans rapport avec la cause réelle).
+            converted_path = self._convert_legacy_word_to_docx(file_path)
+            try:
+                return self._extract_from_docx(converted_path)
+            finally:
+                shutil.rmtree(os.path.dirname(converted_path), ignore_errors=True)
         else:
             return self._extract_from_pdf(file_path)
+
+    def _convert_legacy_word_to_docx(self, file_path: str, timeout: int = 90) -> str:
+        """
+        Convertit un .doc/.dot/.rtf binaire en .docx via LibreOffice headless.
+        Lève une exception explicite et actionnable (plutôt qu'un échec
+        pdfplumber confus) si LibreOffice est absent ou si la conversion
+        échoue — l'appelant (parse()) délègue alors au FallbackParser.
+        """
+        if shutil.which("soffice") is None:
+            raise RuntimeError(
+                f"soffice (LibreOffice) introuvable dans le PATH : impossible de convertir {file_path} "
+                "en .docx. Installez LibreOffice sur cette machine, ou assurez-vous que la conversion "
+                "externe du pipeline fonctionne réellement pour ce fichier."
+            )
+
+        out_dir = tempfile.mkdtemp(prefix="family_a_docconv_")
+        try:
+            result = subprocess.run(
+                ["soffice", "--headless", "--norestore", "--convert-to", "docx", "--outdir", out_dir, file_path],
+                capture_output=True, text=True, timeout=timeout
+            )
+        except subprocess.TimeoutExpired as exc:
+            shutil.rmtree(out_dir, ignore_errors=True)
+            raise RuntimeError(f"Conversion LibreOffice de {file_path} expirée après {timeout}s") from exc
+
+        base = os.path.basename(file_path).rsplit(".", 1)[0]
+        converted_path = os.path.join(out_dir, base + ".docx")
+
+        if result.returncode != 0 or not os.path.exists(converted_path):
+            shutil.rmtree(out_dir, ignore_errors=True)
+            raise RuntimeError(
+                f"Conversion LibreOffice de {file_path} échouée (code {result.returncode}): "
+                f"{result.stderr.strip()}"
+            )
+
+        return converted_path
 
     def _extract_from_docx(self, file_path: str) -> List[str]:
         raw_lines = []
@@ -197,14 +525,16 @@ class FamilyAParser(BaseFamilyParser):
                 p = Paragraph(element, doc)
                 txt = p.text
                 if txt:
+                    # Cases à cocher dessinées (VML/DrawingML) : invisibles
+                    # pour p.text, on les détecte via le XML brut du
+                    # paragraphe et on marque les options concernées.
+                    if _paragraph_has_checkbox_drawing(element):
+                        txt = _mark_drawn_checkboxes(txt)
                     raw_lines.append(txt)
             elif element.tag.endswith('tbl'):
                 table = Table(element, doc)
-                for row in table.rows:
-                    cells = [_clean_line(cell.text) for cell in row.cells if _clean_line(cell.text)]
-                    cells = _dedupe_consecutive(cells)
-                    if cells:
-                        raw_lines.append(" | ".join(cells))
+                raw_rows = [[cell.text for cell in row.cells] for row in table.rows]
+                raw_lines.extend(_classify_and_flatten_table(raw_rows))
 
         for node in doc.element.xpath('//*[local-name()="txbxContent"]'):
             for p_node in node.xpath('.//*[local-name()="p"]'):
@@ -217,29 +547,43 @@ class FamilyAParser(BaseFamilyParser):
 
     def _extract_from_pdf(self, file_path: str) -> List[str]:
         raw_lines = []
+        already_captured = set()
+
         with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages:
                 try:
                     annots = page.annots
                 except Exception as exc:
+                    # pdfplumber peut faire planter SA PROPRE lecture des
+                    # annotations à cause d'un encodage invalide sur UN SEUL
+                    # champ de la page — ce qui, sans garde-fou, ferait
+                    # perdre TOUTES les valeurs de champs de cette page, y
+                    # compris celles, valides, saisies dans d'autres champs
+                    # (ex: un menu déroulant "Année : 2023" à côté d'un champ
+                    # texte mal encodé). _extract_acroform_field_values()
+                    # (basé sur pypdf, plus tolérant) compense ce cas juste
+                    # après la boucle de pages.
                     logger.debug("Annotations illisibles p.%s de %s (%s) — ignorées", page.page_number, file_path, exc)
                     annots = None
 
                 if annots:
                     for annot in annots:
                         if annot.get('V') and isinstance(annot['V'], str):
-                            raw_lines.append(_clean_line(annot['V']))
+                            value = _clean_line(annot['V'])
+                            if value:
+                                raw_lines.append(value)
+                                already_captured.add(value)
                         elif annot.get('Contents') and isinstance(annot['Contents'], str):
-                            raw_lines.append(_clean_line(annot['Contents']))
+                            value = _clean_line(annot['Contents'])
+                            if value:
+                                raw_lines.append(value)
+                                already_captured.add(value)
 
                 tables_objs = page.find_tables()
                 if tables_objs:
                     for table_obj in tables_objs:
-                        for row in table_obj.extract():
-                            cells = [_clean_line(cell) for cell in row if cell and _clean_line(cell)]
-                            cells = _dedupe_consecutive(cells)
-                            if cells:
-                                raw_lines.append(" | ".join(cells))
+                        raw_rows = [[(c or '') for c in row] for row in table_obj.extract()]
+                        raw_lines.extend(_classify_and_flatten_table(raw_rows))
 
                     def not_in_table(obj, _tables=tables_objs):
                         px0, py0, px1, py1 = obj["x0"], obj["top"], obj["x1"], obj["bottom"]
@@ -266,7 +610,58 @@ class FamilyAParser(BaseFamilyParser):
                         if line.strip():
                             raw_lines.append(line)
 
+        # Filet de sécurité pour les valeurs de champs de formulaire
+        # interactif (AcroForm) qu'une page.annots défaillante aurait pu
+        # faire perdre silencieusement (voir commentaire ci-dessus). On ne
+        # rajoute que les valeurs pas déjà capturées, pour ne rien dupliquer
+        # quand page.annots a fonctionné normalement.
+        for line in self._extract_acroform_field_values(file_path):
+            if line not in already_captured:
+                raw_lines.append(line)
+                already_captured.add(line)
+
         return raw_lines
+
+    def _extract_acroform_field_values(self, file_path: str) -> List[str]:
+        """
+        Lit les valeurs des champs de formulaire interactif (texte, menus
+        déroulants, cases à cocher) via pypdf, en complément de la lecture
+        d'annotations de pdfplumber.
+
+        Nécessaire car pdfplumber peut faire planter sa propre lecture de
+        page.annots à cause d'un encodage invalide localisé sur UN SEUL
+        champ de la page (observé en pratique) — perdant alors TOUTES les
+        valeurs de cette page, y compris des champs par ailleurs valides
+        (ex: deux menus déroulants "Année" tous deux remplis à "2023").
+        pypdf s'est montré plus tolérant sur ce type de PDF.
+
+        Les noms de champs (ex: "Liste déroulante4") sont générés par
+        l'éditeur de formulaire et non descriptifs : on ne peut pas les
+        relier de façon fiable au libellé humain affiché à côté sans
+        comparer les positions (rect) de chaque widget avec le texte
+        environnant, ce qui n'est pas fait ici. On restitue donc
+        "nom_champ : valeur" tel quel — imparfait, mais très supérieur à la
+        perte pure et simple de la donnée saisie.
+        """
+        if PdfReader is None:
+            return []
+        try:
+            reader = PdfReader(file_path)
+            fields = reader.get_fields() or {}
+        except Exception as exc:
+            logger.debug("Lecture AcroForm (pypdf) impossible pour %s (%s)", file_path, exc)
+            return []
+
+        lines = []
+        for name, field in fields.items():
+            value = field.get('/V')
+            if value is None:
+                continue
+            value = _clean_line(str(value))
+            if not value:
+                continue
+            lines.append(f"{_clean_line(str(name))} : {value}")
+        return lines
 
     # =========================================================================
     # FUSION MULTI-LIGNES
@@ -284,10 +679,7 @@ class FamilyAParser(BaseFamilyParser):
         "NOM / Prénom" suivie de la rangée "Grade / Fonction" juste après) :
         les accumuler ensemble fusionnait à tort deux rangées différentes
         ("NOM : Grade : | Prénom : Fonction :"). Traiter ligne par ligne
-        évite ce problème sans rien perdre, puisqu'aucun cas de paragraphe
-        réellement réparti sur plusieurs lignes physiques n'apparaît dans
-        ces formulaires.
-
+        évite ce problème sans rien perdre, 
         Deux garde-fous restent nécessaires :
 
         1. Un grand espace d'un seul côté (texte centré ou aligné à droite,
@@ -310,6 +702,13 @@ class FamilyAParser(BaseFamilyParser):
 
         for raw_line in lines:
             if not raw_line.strip():
+                continue
+
+            # Ligne déjà aplatie sémantiquement : à laisser telle quelle,
+            # jamais découpée sur un grand espace interne (elle n'en a
+            # normalement pas, mais mieux vaut ne pas en dépendre).
+            if raw_line.startswith(_SEMANTIC_MARK):
+                merged_lines.append(raw_line)
                 continue
 
             line = raw_line.rstrip()
@@ -405,14 +804,40 @@ class FamilyAParser(BaseFamilyParser):
                 clean_next = _clean_line(next_line)
                 clean_next = _FILLER_RUN_RE.sub(' ____ ', clean_next)
                 is_fillerish = bool(re.fullmatch(r'[.\u2026_\s\[\]]{3,}', clean_next)) or clean_next == '____'
-                is_short_value = len(clean_next.split()) <= 7
-                if clean_next and (is_fillerish or is_short_value):
-                    trailing_val = f"[ {clean_next} ]"
+                is_short_value = len(clean_next.split()) <= 3
+                is_option_list = _looks_like_option_list(clean_next)
+                if clean_next and (is_fillerish or is_short_value or is_option_list):
+                    # Une liste d'options est déjà une valeur "lisible" en
+                    # tant que telle (surtout si elle porte ses propres
+                    # marqueurs "[ ]" de cases à cocher) : l'envelopper à
+                    # nouveau dans "[ ... ]" produirait un double crochet
+                    # ("[ [ ] Congé Académique... ]"). On ne l'enveloppe
+                    # donc que dans les cas filler/valeur courte.
+                    trailing_val = clean_next if is_option_list else f"[ {clean_next} ]"
                     consumed_next = True
 
             pairs.append((current_label, current_delim, trailing_val))
 
         if not pairs:
+            # Aucun label "court" valide trouvé dans ce segment — souvent le
+            # cas d'une question/intitulé long ("Je sollicite... à l'année
+            # d'étude :") qui n'est pas un vrai champ de formulaire mais se
+            # termine tout de même par ':' ou '?'. Sans ce bloc, la liste
+            # d'options qui suit sur la ligne suivante (ex: "L1 ING1 L2
+            # ING2...") restait isolée, déconnectée visuellement de la
+            # question à laquelle elle répond. On tente donc le même
+            # rattachement de ligne suivante que pour un champ valide, mais
+            # seulement si ça ressemble vraiment à des options/remplissage
+            # (pas une phrase de suite, pour ne pas recoller du texte qui
+            # n'a rien à voir).
+            if segment.rstrip().endswith((':', '?')) and next_line:
+                clean_next = _clean_line(next_line)
+                clean_next = _FILLER_RUN_RE.sub(' ____ ', clean_next)
+                is_fillerish = bool(re.fullmatch(r'[.\u2026_\s\[\]]{3,}', clean_next)) or clean_next == '____'
+                is_short_value = len(clean_next.split()) <= 3
+                is_option_list = _looks_like_option_list(clean_next)
+                if clean_next and (is_fillerish or is_short_value or is_option_list):
+                    return f"{segment} {clean_next}", True
             return segment, False
 
         reconstructed_parts = []
