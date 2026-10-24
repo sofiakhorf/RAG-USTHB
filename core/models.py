@@ -26,6 +26,7 @@ class ChunkMetadata(BaseModel):
     procedure: Optional[str] = None
     formation: Optional[str] = None
     niveau: Optional[str] = None
+    semestre: Optional[str] = None
     ue: Optional[str] = None
     matiere: Optional[str] = None
     annee_universitaire: Optional[str] = None
@@ -46,3 +47,8 @@ class Chunk(BaseModel):
     """Contrat de données final pour le découpage RAG."""
     text: str
     metadata: ChunkMetadata
+
+    @property
+    def content(self) -> str:
+        return self.text
+
