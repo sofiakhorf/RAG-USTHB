@@ -35,6 +35,11 @@ class ChunkMetadata(BaseModel):
     sheet_name: Optional[str] = None     # Nom de la feuille Excel
     block_range: Optional[str] = None    # Plage de lignes (ex: "1-15")
     block_title: Optional[str] = None    # Titre ou bandeau du bloc
+    #  champs spécifiques Famille F (textes juridiques)
+    chapter: Optional[str] = None        # Chapitre/Titre courant
+    article_title: Optional[str] = None  # Titre de l'article (ex: "Art. 5")
+    article_number: Optional[int] = None # Numéro de l'article (entier)
+    language: Optional[str] = None       # Langue dominante ("fr" / "ar" / "mixed")
     is_fallback: bool = False
 
     class Config:

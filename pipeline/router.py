@@ -100,7 +100,8 @@ class DocumentRouter:
         ],
         # --- Mots-clés Décrets / Juridique ---
         "F": [
-            "décret", "decret", "arrêté", "arrete", "journal officiel"
+            "décret", "decret", "arrêté", "arrete", "journal officiel",
+            "قرار", "مرسوم", "قانون", "decision", "loi", "ordonnance"
         ],
         # --- Mots-clés Emplois du temps ---
         "H": [
@@ -561,6 +562,10 @@ class DocumentRouter:
         if ext == ".pdf" and is_scanned_pdf:
             if self._matches_keywords(effective_title_clean, "F"): 
                 return "F", effective_title, effective_start_line
+            # For scanned PDFs with opaque names, check actual page content
+            # for legal keywords before giving up and classifying as image.
+            if self._scanned_pdf_has_legal_content(file_path):
+                return "F", effective_title, effective_start_line
             return "I", effective_title, effective_start_line
 
         if ext == ".pdf":
@@ -579,6 +584,40 @@ class DocumentRouter:
             return "A", effective_title, effective_start_line
         
         return "FALLBACK", effective_title, effective_start_line
+
+    _LEGAL_KEYWORDS_SCAN = [
+        "décret", "decret", "arrêté", "arrete", "journal officiel",
+        "قرار", "مرسوم", "قانون", "decision", "loi", "ordonnance",
+        "الجمهورية", "وزارة", "république", "ministère", "ministere",
+    ]
+
+    def _scanned_pdf_has_legal_content(self, file_path: str) -> bool:
+        """Quick OCR of page 1 to detect legal keywords in scanned PDFs
+        with opaque filenames (e.g. '994.pdf')."""
+        try:
+            import pytesseract
+            from PIL import Image
+
+            if "TESSDATA_PREFIX" not in os.environ:
+                local_tess = Path(__file__).resolve().parent.parent / "tessdata"
+                if local_tess.exists():
+                    os.environ["TESSDATA_PREFIX"] = str(local_tess)
+
+            doc = pymupdf.open(file_path)
+            if len(doc) == 0:
+                doc.close()
+                return False
+            page = doc[0]
+            pix = page.get_pixmap(dpi=200)  # 200 DPI provides sharp Arabic OCR
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            doc.close()
+
+            text = pytesseract.image_to_string(img, lang="fra+ara", config="--psm 6")
+            text_lower = text.lower()
+            return any(kw in text_lower for kw in self._LEGAL_KEYWORDS_SCAN)
+        except Exception as e:
+            logger.warning(f"Quick OCR scan failed for {file_path}: {e}")
+            return False
 
     def _analyze_pdf(self, file_path: str) -> Tuple[int, bool]:
         """
