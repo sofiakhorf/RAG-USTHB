@@ -35,4 +35,5 @@ prompts/
 check_deps.py
 chunks_output.jsonl
 fichierVerif/
+Chunks_family/
 
