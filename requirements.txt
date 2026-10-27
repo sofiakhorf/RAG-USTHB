@@ -6,7 +6,26 @@ pdfplumber>=0.10.0     # Extraction orientée tableau (FamilyG, FamilyH)
 
 # Traitement d'images et OCR
 pytesseract>=0.3.10    # Wrapper Python pour Tesseract OCR (FamilyI)
-Pillow>=10.0.0         # Importé sous le nom 'PIL' pour l'imagerie (FamilyI)
+Pillow>=10.0.0  # Importé sous le nom 'PIL' pour l'imagerie (FamilyI)
+
+sentence-transformers
 
 # Modèles de données et validation
-pydantic>=2.0.0        # Validation et typage des métadonnées et chunks (models.py)
+pydantic>=2.0.0  # Validation et typage des métadonnées et chunks (models.py)
+
+# --- Backend Django (backend/) - scaffold only ---
+# Pinned because these exact versions were verified to install on Python 3.14
+# (cp314 wheels) and to satisfy `manage.py check` and `check --deploy`.
+# Django        = the framework itself.
+# psycopg       = PostgreSQL driver; the [binary] extra bundles libpq, so no
+#                 system-level PostgreSQL client install is required.
+# pgvector      = imported by backend/chatbot/migrations/0001_initial.py
+#                 (VectorExtension / vector(384)); kept so the preserved
+#                 migration history remains runnable.
+# python-dotenv = loads the repository-root .env; config/settings.py imports
+#                 it directly, so it must be declared rather than left to
+#                 arrive transitively.
+Django==6.0.9
+psycopg[binary]==3.3.6
+pgvector==0.5.1
+python-dotenv>=1.0.0
