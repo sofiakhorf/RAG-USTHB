@@ -1,46 +1,82 @@
-# Frontend (React + TypeScript + Vite + Tailwind CSS)
+# RAG-USTHB
 
-Student-facing UI for RAG-USTHB. **Structure scaffold only** — no packages were
-installed, no UI components implemented, no build configuration created in this pass.
+A prototype interface for an academic assistant designed for students of the University of Sciences and Technology Houari Boumediene (USTHB). The project aims to organize course materials and academic documents, laying the groundwork for a future search and study experience powered by Retrieval-Augmented Generation (RAG).
 
-## MVP feature pages (directory placeholders created)
+> **Project Status:** This is a Minimum Viable Product (MVP) preview interface. There is currently no connected RAG engine, artificial intelligence model, database, or backend authentication service.
 
-- `src/pages/Home/` — landing page
-- `src/pages/Login/` — authentication (via Keycloak, integrated by the backend)
-- `src/pages/Register/` — registration
-- `src/pages/Chatbot/` — chatbot interface
-- `src/pages/Profile/` — student profile / chat history / logout
+## Current Features
 
-## Planned directories (placeholders created)
+- Landing page and full Arabic interface with right-to-left (RTL) layout support.
+- Demo chat interface with sample subjects, conversations, and documents.
+- Content organization by academic subject (e.g., Algorithms, Analysis, Algebra, Physics).
+- Local file attachment preview supporting standard document formats (PDF, DOC, DOCX, TXT, MD) up to 10 MB per file.
+- Theme switching support for light and dark modes.
 
-- `src/assets/` — static assets (images, icons, fonts)
-- `src/components/` — reusable UI components
-- `src/layouts/` — application layouts (auth/chat shells)
-- `src/services/` — API service layer for Django REST Framework
-- `src/hooks/` — custom React hooks
-- `src/types/` — shared TypeScript type definitions
-- `src/utils/` — pure utility functions
-- `public/` — static files served by Vite
+## Prototype Limitations
 
-## Planned root files (not created — see "Manual steps")
+- Questions are not dispatched to an AI model or retrieval engine; a static explanatory message is shown instead of a generated response.
+- Chat history, documents, and subject data are strictly mock data stored only within the front-end state.
+- Login and registration interfaces are mock UI components and are not tied to an active authentication service.
+- Uploaded files remain strictly local within the current preview session and are neither stored permanently nor transmitted to a server.
 
-- `src/App.tsx`, `src/main.tsx` — entry points (created during scaffolding)
-- `package.json`, `vite.config.ts` — created by `npm create vite@latest`
-- `tsconfig.json`, `tailwind.config.js`, `postcss.config.js`
-- `README.md` — created together with the actual scaffold
+Do not use this prototype to submit sensitive personal information or official university documents.
 
-## Manual steps (not performed in this structure-only pass)
+## Tech Stack
 
-1. Scaffold the app inside `frontend/` (from this directory):
-   `npm create vite@latest . -- --template react-ts`
-2. Install Tailwind CSS per the Vite guide.
-3. Create the routes/pages listed above and the `services/` layer pointing at the
-   Django REST Framework API (backend base URL via environment variable).
-4. `frontend/README.md` will be replaced by the scaffold's README — merge this
-   document's structure notes into it.
+- Next.js 16 (App Router)
+- React 19
+- Tailwind CSS 4
+- pnpm
 
-## Notes
+## Prerequisites
 
-- Remote branch `origin/FrontEnd` exists but its contents are identical to
-  `origin/main` (preprocessing pipeline only) — no frontend project was found in it.
-- Nothing was installed and no source files were written.
+- Node.js version compatible with Next.js 16
+- pnpm package manager
+
+## Local Development Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/sofiakhorf/RAG-USTHB
+   ```
+
+2. Navigate into the project directory:
+   ```bash
+   cd "RAG-USTHB\frontend"
+   ```
+
+3. Install project dependencies:
+   ```bash
+   pnpm install
+   ```
+
+4. Start the development server:
+   ```bash
+   pnpm dev
+   ```
+
+5. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## Build & Production Commands
+
+- **Build the application:**
+  ```bash
+  pnpm build
+  ```
+
+- **Run production build:**
+  ```bash
+  pnpm start
+  ```
+
+## Project Structure
+
+- `app/page.jsx`: Main application layout, view flow routing, and prototype preview state.
+- `app/mock-data.js`: Mock subjects, conversations, and document data.
+- `app/rag-*.jsx`: Interface components, including home landing page, chat feed, sidebar, and attachment dialogs.
+- `public/`: Static assets and public images.
+- `lib/`: Helper functions and shared utilities.
+
+## Development via v0
+
+This repository is linked to a v0 workspace. Continuous UI iterations and visual enhancements can be followed directly through the v0 project page.
