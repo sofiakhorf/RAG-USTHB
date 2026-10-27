@@ -35,7 +35,10 @@ prompts/
 check_deps.py
 chunks_output.jsonl
 fichierVerif/
-Chunks_family/
+scratch/
+scripts_amelioration_chunking/
+
+
 
 
 # --- Backend Django (la cible de deploiement est PostgreSQL) ---

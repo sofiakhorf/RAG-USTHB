@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Tuple, Optional, List, Dict
 
 import pymupdf
-import openpyxl
 from docx import Document
 from docx.document import Document as _Document
 from docx.oxml.table import CT_Tbl
@@ -248,6 +247,10 @@ class DocumentRouter:
         # 5. compression finale des espaces
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
+        # 6. marqueur de doublon de téléchargement en fin de nom
+        # ("Rapport_Individuel (1)" -> "Rapport Individuel")
+        cleaned = re.sub(r"\s*\(\d+\)$", "", cleaned).strip()
+
         return cleaned
 
     @staticmethod
@@ -408,13 +411,13 @@ class DocumentRouter:
                                 extracted_lines.extend(row_texts)
 
             elif ext in [".xlsx", ".xls"]:
-                wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
-                sheet = wb.active
-                for row in sheet.iter_rows(max_row=10, values_only=True):
-                    row_str = " ".join([str(cell) for cell in row if cell is not None]).strip()
-                    if row_str:
-                        extracted_lines.append(row_str)
-                wb.close()
+                # Un classeur n'a pas de « titre de contenu » fiable : sa première
+                # ligne non vide est une ligne d'en-têtes ou un bandeau de cellules
+                # fusionnées (ex. « JOURNEE | CRENEAU | TP126 … » pour un planning,
+                # « Sujets Licence | Organisme » pour une liste de sujets). Le nom
+                # de fichier est la seule source de titre stable ; on ne saute
+                # aucune ligne (index 0) pour laisser le parser lire les bandeaux.
+                return None, 0
 
         except Exception as e:
             logger.error(f"Erreur lors de la lecture du contenu de {file_path} : {e}")
@@ -479,6 +482,48 @@ class DocumentRouter:
         return any(kw in text for kw in self.FAMILY_KEYWORDS.get(family_id, []))
 
     # =========================================================================
+    # 4bis. INDICE DE FAMILLE PAR CONTENU (1re page du PDF)
+    # =========================================================================
+    # Complète la classification par titre pour les PDF dont le titre effectif
+    # est inutilisable : nom de fichier opaque -> titre issu du contenu, souvent
+    # une ligne d'en-tête institutionnelle (« FACULTE D'INFORMATIQUE Planning
+    # des Examens… ») avalée par le pattern "Faculté..." du filtre d'en-têtes,
+    # ou une cellule de tableau (« Année »). Les motifs sont volontairement
+    # spécifiques pour ne pas capturer des documents d'autres familles.
+    CONTENT_HINTS = [
+        # Plannings d'examens : "Planning des Examens de Rattrapages",
+        # "Planning des Examens M2 (Rattrapage)", "Planning des Examens"
+        ("E", re.compile(r"planning\s+des\s+examens", _FLAGS)),
+        # Emplois du temps : "Schedules of : 4rd year CS.ENG", "Emploi du temps"
+        ("H", re.compile(r"emploi[s]?\s+du\s+temps|schedules?\s+of\b", _FLAGS)),
+        # PV de délibération : "PV de délibération", "Procès-verbal"
+        ("G", re.compile(r"proc[èe]s[\s-]*verbal|pv\s+de\s+d[ée]lib[ée]ration", _FLAGS)),
+    ]
+
+    @classmethod
+    def _pdf_content_family_hint(cls, file_path: str) -> Optional[str]:
+        """Détecte la famille d'un PDF via des motifs présents sur sa 1re page.
+
+        Ne s'applique qu'aux PDF textuels (un PDF scanné sans couche texte ne
+        donne aucun indice) et retourne None plutôt que de deviner.
+        """
+        try:
+            doc = pymupdf.open(file_path)
+            if len(doc) == 0:
+                doc.close()
+                return None
+            text = doc[0].get_text("text") or ""
+            doc.close()
+            if not text.strip():
+                return None
+            for family_id, rx in cls.CONTENT_HINTS:
+                if rx.search(text):
+                    return family_id
+        except Exception as e:
+            logger.warning(f"Analyse de contenu impossible pour {file_path} : {e}")
+        return None
+
+    # =========================================================================
     # 5. POINT D'ENTRÉE PRINCIPAL
     # =========================================================================
 
@@ -537,9 +582,22 @@ class DocumentRouter:
         # un seul parsing du fichier, quel que soit le format.
         effective_title, effective_start_line = self._get_effective_title_and_index(file_path)
         effective_title_clean = effective_title.lower() if effective_title else ""
+        fname_lower = file_path_obj.name.lower()
+        path_lower = str(file_path_obj).lower()
 
         if ext in [".xlsx", ".xls"]:
             return "EXCEL", effective_title, effective_start_line
+
+        # PRIORITE : examen/rattrapage et emploi du temps par nom de fichier
+        if ext == ".pdf":
+            if "emploitemp" in fname_lower or "emploi_temp" in fname_lower or fname_lower.startswith("emploi"):
+                return "H", effective_title or self._clean_filename_title(file_path_obj.stem), effective_start_line
+            if "rattrapage" in fname_lower or "planingrattrap" in fname_lower or "planningrattrap" in fname_lower:
+                return "E", effective_title or self._clean_filename_title(file_path_obj.stem), effective_start_line
+            if "ing1" in fname_lower and ("semestre" in fname_lower or "rattrap" in fname_lower or "examen" in fname_lower):
+                return "E", effective_title or self._clean_filename_title(file_path_obj.stem), effective_start_line
+            if "m2" in fname_lower and ("rattrap" in fname_lower or "examen" in fname_lower):
+                return "E", effective_title or self._clean_filename_title(file_path_obj.stem), effective_start_line
 
         # -------------------------------------------------------------
         # 3. Logique de classification par mots-clés (Utilisation du dictionnaire)
@@ -550,11 +608,14 @@ class DocumentRouter:
         if self._matches_keywords(effective_title_clean, "E"): 
             return "E", effective_title, effective_start_line
 
-        # Analyse structurelle du PDF si nécessaire (déjà lu à l'étape 2, 
-        # ici on ne fait qu'analyser la structure métadonnées/pages)
+        # Analyse structurelle du PDF si nécessaire (déjà lu à l'étape 2,
+        # ici on ne fait qu'analyser la structure métadonnées/pages) + indice
+        # de famille lu directement dans le texte de la 1re page.
         page_count, is_scanned_pdf = (0, False)
+        content_hint = None
         if ext == ".pdf":
             page_count, is_scanned_pdf = self._analyze_pdf(file_path)
+            content_hint = self._pdf_content_family_hint(file_path)
 
         if self._matches_keywords(effective_title_clean, "B") and (4 <= page_count if ext == ".pdf" else False):
             return "B", effective_title, effective_start_line
@@ -569,9 +630,14 @@ class DocumentRouter:
             return "I", effective_title, effective_start_line
 
         if ext == ".pdf":
-            if self._matches_keywords(effective_title_clean, "H"): 
+            # Indice de contenu : rattrape les PDF dont le titre effectif est
+            # une ligne d'en-tête institutionnelle au lieu du vrai intitulé
+            # (plannings d'examens, emplois du temps, PV de délibération).
+            if content_hint in ("E", "H", "G"):
+                return content_hint, effective_title, effective_start_line
+            if self._matches_keywords(effective_title_clean, "H"):
                 return "H", effective_title, effective_start_line
-            if self._matches_keywords(effective_title_clean, "G"): 
+            if self._matches_keywords(effective_title_clean, "G"):
                 return "G", effective_title, effective_start_line
 
         # -------------------------------------------------------------

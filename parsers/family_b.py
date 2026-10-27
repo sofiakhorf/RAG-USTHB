@@ -5,47 +5,52 @@ import logging
 from typing import List, Optional, Dict, Tuple
 
 # --- 2. Bibliothèques externes ---
-import pymupdf  # (pour l'extraction PDF avancée : texte, dict, tables, dessins)
+import pymupdf  # (extraction PDF : texte, blocs, tableaux)
 
 from core import Chunk, ChunkMetadata, BaseFamilyParser, ParserRegistry
-from core.utils import SystemUtils, AcademicMetadataExtractor
-from parsers.fallback import FallbackParser
+from core.utils import SystemUtils
 
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Helpers
+# Helpers génériques
 # =============================================================================
 
 ARABIC_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F]+")
+# Glyphes privés utilisés par les puces Wingdings/Symbol des canevas Word :
+# ils ne portent aucune information et polluent le texte indexé.
+PRIVATE_USE_RE = re.compile(r"[\ue000-\uf8ff]")
+INVISIBLE_RE = re.compile(r"[\u00ad\u200b-\u200f\u202a-\u202e\ufeff]")
+
+ANNEE_RE = re.compile(r"(\d{4})\s*[/-]\s*(\d{4})")
+NIVEAU_RE = re.compile(r"(licence|master|ing[ée]nieur|cycle\s+pr[ée]paratoire|doctorat)", re.I)
+
+NIVEAU_LABELS = {
+    "licence": "Licence",
+    "master": "Master",
+    "ingenieur": "Ingénieur",
+    "cycle_preparatoire": "Cycle préparatoire",
+}
 
 
 def strip_arabic(text: str) -> str:
-    """Remove residual Arabic runs left on otherwise-French pages.
-
-    FIX: the original code only ran this on a throw-away `text_simple`
-    variable used for the arabic-page/signature-page checks. The text that
-    actually ends up in chunks (extracted via `page.get_text("dict")`) never
-    went through it, so bidi leftovers survived into the corpus.
-    """
+    """Supprime les résidus arabes d'une page par ailleurs française."""
     return ARABIC_RE.sub("", text)
 
 
+def clean_line(text: str) -> str:
+    """Nettoie une ligne de texte PDF (glyphes privés, espaces, puces)."""
+    text = PRIVATE_USE_RE.sub("", text)
+    text = INVISIBLE_RE.sub("", text)
+    text = text.replace("\u00a0", " ")
+    text = re.sub(r"\s+", " ", text)
+    # Puces isolées en début de ligne ("•", "·", "✓", "-" orphelin)
+    text = re.sub(r"^[\s•·▪◦✓✔\-–—]+", "", text)
+    return text.strip()
+
+
 # -----------------------------------------------------------------------------
-# Formation / niveau detection
-#
-# FIX: the original `formation = "ISIL" if "isil" in file_path.lower() else
-# "BIGDATAA"` silently mislabels every formation that isn't ISIL as
-# "BIGDATAA / master" — confirmed on the "Tronc Commun Ingénieur" canevas,
-# which has nothing to do with BigData and is not a master's degree. Wrong
-# metadata is worse than missing metadata in a RAG index (it actively
-# misleads retrieval/filtering), so unknown formations are now tagged
-# "UNKNOWN" instead of guessed.
-#
-# Detection order:
-#   1. Filename hints for formations we know for certain (fast path).
-#   2. Content-based heuristics against the cover page(s).
-#   3. UNKNOWN, logged, rather than a wrong guess.
+# Formation / niveau / année
 # -----------------------------------------------------------------------------
 
 FORMATION_FILENAME_HINTS: Dict[str, Tuple[str, str]] = {
@@ -54,16 +59,13 @@ FORMATION_FILENAME_HINTS: Dict[str, Tuple[str, str]] = {
     "bigdata": ("BIGDATAA", "master"),
 }
 
-# (pattern on cover-page text, formation or None to auto-extract, niveau)
 FORMATION_CONTENT_HINTS = [
-    (re.compile(r"tronc\s+commun.{0,20}ing[ée]nieur", re.I), "TC-INGENIEUR", "cycle_preparatoire"),
+    (re.compile(r"tronc\s+commun.{0,30}ing[ée]nieur", re.I), "TC-INGENIEUR", "cycle_preparatoire"),
     (re.compile(r"ing[ée]nieur\s+d.?[ée]tat", re.I), None, "ingenieur"),
     (re.compile(r"licence\s+professionnalisante", re.I), None, "licence"),
     (re.compile(r"\bmaster\b", re.I), None, "master"),
 ]
 
-# Formation acronyms are conventionally given in parentheses on the cover
-# page, e.g. "...des Systèmes d'Information et des Logiciels (ISIL)".
 ACRONYM_RE = re.compile(r"\(([A-ZÀ-Ö]{2,12})\)")
 
 
@@ -81,52 +83,111 @@ def detect_formation_niveau(file_path: str, cover_text: str) -> Tuple[str, str]:
             return formation, niveau
 
     logger.warning(
-        "FamilyB: could not identify formation/niveau for %s — tagging UNKNOWN "
-        "instead of defaulting to a guess. Consider extending "
-        "FORMATION_FILENAME_HINTS / FORMATION_CONTENT_HINTS.",
-        file_path,
+        "FamilyB: formation/niveau introuvable pour %s — marqué UNKNOWN.", file_path
     )
     return "UNKNOWN", "UNKNOWN"
 
 
+def detect_annee_universitaire(doc: "pymupdf.Document") -> Optional[str]:
+    """Année universitaire majoritaire du document.
+
+    Le canevas ISIL affiche « 2012-2013 » sur la page de garde (en-tête
+    obsolète) alors que la couverture et les 79 autres pages indiquent
+    2021-2022 : on retient donc la valeur la plus fréquente, pas la première.
+    """
+    counts: Dict[str, int] = {}
+    for page in doc:
+        try:
+            text = page.get_text()
+        except Exception:
+            continue
+        for m in ANNEE_RE.finditer(text):
+            y1, y2 = int(m.group(1)), int(m.group(2))
+            if y2 != y1 + 1 or not (1990 <= y1 <= 2100):
+                continue
+            label = f"{y1}/{y2}"
+            counts[label] = counts.get(label, 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda kv: kv[1])[0]
+
+
+DOCUMENT_NAMES = {
+    "ISIL": "Offre de formation Licence ISIL",
+    "TC-INGENIEUR": "Offre de formation Tronc Commun Ingénieur",
+}
+
+
 # -----------------------------------------------------------------------------
-# Structural anchors.
-#
-# Both sample families (TC canevas and ISIL cahier des charges) use the same
-# fixed institutional template for each "fiche matière":
-#     Semestre : <n>
-#     Unité d'enseignement : <...>
-#     Matière : <...>
-# These anchors are far more reliable than a font-size heuristic and are used
-# in preference to it. Font size is kept only for the coarse, document-level
-# chapter title (current_h1), which is not part of this fixed template.
+# Ancrages de structure
 # -----------------------------------------------------------------------------
 
-# Matches "Semestre : S3", "Semestre 1 :", "1- Semestre 1 :", "Semestre : 01"...
-SEMESTRE_BOUNDARY_RE = re.compile(r"^(?:\d+[\-.)]\s*)?semestre\b\s*:?\s*(.*)$", re.I)
-SEMESTRE_NUM_RE = re.compile(r"semestre\s*:?\s*s?\s*0*([0-9]+)", re.I)
-UE_LINE_RE = re.compile(r"^unit[ée]\s+d.enseignement\s*:?\s*(.+)$", re.I)
-# FIX: the previous h3 regex also matched any line starting with "<digit> -"
-# or the bare word "Code :" ANYWHERE in a chunk's body. Since "Contenu de la
-# matière" sections are full of numbered sub-items ("1- Introduction",
-# "2- Définitions", ...), that regex fired constantly on ordinary body text,
-# overwriting the tracked matière name mid-fiche. Only the literal
-# "Matière : ..." / "Module : ..." anchor is used now.
-MATIERE_LINE_RE = re.compile(r"^(?:intitul[ée]\s+d[eu]\s+la?\s+)?(?:mati[èe]re|module)\s*:?\s*(.+)$", re.I)
+# "Semestre : S3" / "Semestre : 01" (les libellés de tableaux
+# "1- Semestre 1 :" et les lignes de sommaire à points de suite sont exclus).
+SEMESTRE_ANCHOR_RE = re.compile(r"^Semestre\s*:\s*(?:S\s*)?0*([1-6])\s*$", re.I)
+UE_LINE_RE = re.compile(r"^Unit[ée]\s+d.enseignement\s*:?\s*(.*)$", re.I)
+MATIERE_LINE_RE = re.compile(
+    r"^(?:intitul[ée]\s+d[eu]\s+la?\s+)?(?:mati[èe]re|module)\s*:\s*(.+)$", re.I
+)
+CREDITS_LINE_RE = re.compile(r"^Cr[ée]dits?\s*:\s*(\d+)", re.I)
+COEFFICIENT_LINE_RE = re.compile(r"^Coefficients?\s*:\s*(\d+)", re.I)
+
+# En-têtes / pieds de page des deux canevas.
+HEADER_RES = [
+    re.compile(r"^Etablissement\s*:\s*USTHB$", re.I),
+    re.compile(r"^Intitul[ée]\s+de\s+la\s+licence\s*:\s*ISIL$", re.I),
+    re.compile(r"^Page\s+\d+$", re.I),
+    re.compile(r"^Ann[ée]e\s+universitaire\s*:\s*\d{4}\s*[-/]\s*\d{4}$", re.I),
+    re.compile(r"^TRONC\s+COMMUN\s+ING[ÉE]NIEUR.*$", re.I),
+    re.compile(r"^Annexe\s+de\s+l.arr[êe]t[ée].*$", re.I),
+    re.compile(r"^fixant\s+le\s+programme.*$", re.I),
+    re.compile(r"^du\s+domaine\s*[«\"].*$", re.I),
+    re.compile(r"^Date,\s*signature\s+et\s+visas?.*$", re.I),
+]
+
+# Sections qui suivent la dernière fiche : visas, conventions, lettres types.
+STOP_RE = re.compile(
+    r"^(?:[IVX]+\s*[-–.]\s*)?(?:Accords?\s*/\s*Conventions?|Avis\s+et\s+visas|"
+    r"LETTRE\s+D.INTENTION|Conventions?\s+et\s+accords?)\b",
+    re.I,
+)
+
+
+def is_header_line(line: str) -> bool:
+    return any(r.match(line) for r in HEADER_RES)
 
 
 def normalize_semestre(raw_text: str) -> Optional[str]:
-    m = SEMESTRE_NUM_RE.search(raw_text)
+    m = SEMESTRE_ANCHOR_RE.match(raw_text)
     return f"S{int(m.group(1))}" if m else None
 
 
-def build_metadata(**kwargs) -> ChunkMetadata:
-    """Construct ChunkMetadata defensively.
+UE_LABELS = (
+    ("fondamentale", "Fondamentale"),
+    ("méthodologique", "Méthodologique"),
+    ("methodologique", "Méthodologique"),
+    ("découverte", "Découverte"),
+    ("decouverte", "Découverte"),
+    ("transversale", "Transversale"),
+)
 
-    `semestre` is new. If the ChunkMetadata model in this codebase hasn't
-    been extended with that field yet, drop it rather than raising —
-    the semester is always still embedded in the chunk's text breadcrumb.
-    """
+
+def normalize_ue(raw: Optional[str]) -> Optional[str]:
+    """Uniformise les libellés TC (« fondamentale. » → « Fondamentale »)."""
+    if not raw:
+        return None
+    value = raw.strip().rstrip(".").strip()
+    lower = value.lower()
+    for key, label in UE_LABELS:
+        if lower.startswith(key):
+            if "ut" in lower and label == "Transversale":
+                return "Transversale (UT)"
+            return label
+    return value or None
+
+
+def build_metadata(**kwargs) -> ChunkMetadata:
+    """Construit ChunkMetadata sans échouer si un champ optionnel manque."""
     try:
         return ChunkMetadata(**kwargs)
     except TypeError:
@@ -134,11 +195,40 @@ def build_metadata(**kwargs) -> ChunkMetadata:
         return ChunkMetadata(**kwargs)
 
 
+def split_lines(lines: List[str], limit: int) -> List[List[str]]:
+    """Découpe une liste de lignes en blocs d'au plus `limit` caractères."""
+    parts: List[List[str]] = []
+    current: List[str] = []
+    size = 0
+    for line in lines:
+        if current and size + len(line) + 1 > limit:
+            parts.append(current)
+            current, size = [], 0
+        current.append(line)
+        size += len(line) + 1
+    if current:
+        parts.append(current)
+    return parts
+
+
 @ParserRegistry.register("B")
 class FamilyBParser(BaseFamilyParser):
+    """Canevas d'offre de formation (fiches matières + tableaux semestriels).
 
-    SIGNATURE_MAX_TEXT_LEN = 80
-    H1_FONT_MIN_SIZE = 15
+    Deux sources de la famille B partagent le même template :
+      * Cahier des charges Licence ISIL (26 fiches, 2021/2022) ;
+      * Canevas Tronc Commun Ingénieur (30 fiches, 2023/2024).
+
+    Chaque fiche matière devient un chunk autonome (contexte licence /
+    semestre / UE / matière / année répété), chaque tableau récapitulatif de
+    semestre devient un chunk unique aplati (une ligne par matière), et les
+    pages de garde, sommaires, prose institutionnelle et visas sont exclues.
+    """
+
+    MAX_CHUNK_CHARS = 6000
+    MIN_CHUNK_CHARS = 150
+    JUNK_PAGE_MAX_MEAN_LINE = 12
+    JUNK_PAGE_MIN_LINES = 200
 
     def parse(
         self,
@@ -146,240 +236,543 @@ class FamilyBParser(BaseFamilyParser):
         document_title: Optional[str] = None,
         effective_start_line: int = 0,
     ) -> List[Chunk]:
-        clean_title = document_title if document_title else os.path.basename(file_path)
         chunks: List[Chunk] = []
-        doc = pymupdf.open(file_path)
+        try:
+            doc = pymupdf.open(file_path)
+        except Exception:
+            logger.exception("FamilyB: impossible d'ouvrir %s", file_path)
+            return chunks
 
-        # Formation/niveau are document-level, not page-level: read the cover.
-        cover_text = "".join(doc[i].get_text() for i in range(min(2, len(doc))))
-        formation, niveau = detect_formation_niveau(file_path, cover_text)
-
-        current_h1 = ""
-        current_semestre: Optional[str] = None
-        current_ue = ""
-        current_matiere = ""
-        fiche_buffer: List[str] = []
-
-        def flush(page_no: int) -> None:
-            """Close whatever fiche is currently being accumulated.
-
-            FIX: in the original code, the heading-detection elif-ladder ran
-            BEFORE this check, so by the time a fiche was flushed on hitting
-            a new "Matière :" line, `current_h3` (the matière name) had
-            *already* been overwritten with the NEW matière — every closed
-            chunk was mislabeled with the matière that comes after it, not
-            its own. Flushing now always happens with the still-untouched
-            metadata of the fiche being closed; state is only updated
-            afterwards, once the old buffer is safely on its way to `chunks`.
-            """
-            nonlocal fiche_buffer
-            if not fiche_buffer:
-                return
-            breadcrumb = (
-                f"{(niveau or '').upper()} {formation} > "
-                f"{current_semestre or '?'} > {current_ue or '?'} > {current_matiere or '?'}\n"
+        try:
+            cover_text = "".join(
+                doc[i].get_text() for i in range(min(4, len(doc)))
             )
-            chunks.append(Chunk(
-                text=breadcrumb + "\n".join(fiche_buffer),
-                metadata=build_metadata(
-                    document_name=clean_title,
-                    family_type="B",
-                    formation=formation,
-                    page=page_no,
-                    ue=current_ue or None,
-                    matiere=current_matiere or None,
-                    semestre=current_semestre,
-                ),
-            ))
-            fiche_buffer = []
+            formation, niveau = detect_formation_niveau(file_path, cover_text)
+            niveau_label = NIVEAU_LABELS.get(niveau, niveau.title() if niveau else "UNKNOWN")
+            annee_univ = detect_annee_universitaire(doc)
+            document_name = DOCUMENT_NAMES.get(
+                formation,
+                document_title or os.path.basename(file_path),
+            )
 
-        for idx, page in enumerate(doc):
+            base_meta = dict(
+                document_name=document_name,
+                family_type="B",
+                formation=formation,
+                niveau=niveau_label,
+                annee_universitaire=annee_univ,
+            )
+
+            fiches, table_chunks = self._extract_document(
+                doc, base_meta, formation, niveau_label, annee_univ
+            )
+            chunks.extend(table_chunks)
+            chunks.extend(fiches)
+        finally:
+            doc.close()
+
+        return chunks
+
+    # -------------------------------------------------------------------------
+    # Extraction principale
+    # -------------------------------------------------------------------------
+    def _extract_document(
+        self,
+        doc: "pymupdf.Document",
+        base_meta: dict,
+        formation: str,
+        niveau_label: str,
+        annee_univ: Optional[str],
+    ) -> Tuple[List[Chunk], List[Chunk]]:
+        fiches: List[Chunk] = []
+        tables: List[Chunk] = []
+
+        current: Optional[dict] = None
+        pending_header: List[str] = []
+        buf: List[str] = []
+        stopped = False
+
+        def open_fiche(page_no: int, matiere: str) -> dict:
+            semestre = ue = credits = coef = None
+            for line in pending_header:
+                m = SEMESTRE_ANCHOR_RE.match(line)
+                if m:
+                    semestre = f"S{int(m.group(1))}"
+                    continue
+                m = UE_LINE_RE.match(line)
+                if m:
+                    ue = normalize_ue(m.group(1).strip() or None)
+                    continue
+                m = CREDITS_LINE_RE.match(line)
+                if m:
+                    credits = int(m.group(1))
+                    continue
+                m = COEFFICIENT_LINE_RE.match(line)
+                if m:
+                    coef = int(m.group(1))
+            return {
+                "page": page_no,
+                "semestre": semestre,
+                "ue": ue,
+                "matiere": matiere,
+                "credits": credits,
+                "coef": coef,
+            }
+
+        def close_fiche() -> None:
+            nonlocal buf
+            if current is None:
+                buf = []
+                return
+            body = [line for line in buf if line]
+            if body:
+                fiches.extend(
+                    self._build_fiche_chunk(
+                        current, body, base_meta, niveau_label, formation, annee_univ
+                    )
+                )
+            buf = []
+
+        for page_index, page in enumerate(doc):
+            page_no = page_index + 1
             try:
-                text_simple = page.get_text()
+                page_text = page.get_text()
             except Exception:
-                logger.exception("FamilyB: failed to read page %s of %s", idx + 1, file_path)
+                logger.exception("FamilyB: lecture page %s impossible (%s)", page_no, doc.name)
                 continue
 
-            # Filtre pages en arabe
-            if SystemUtils.is_arabic_page(text_simple):
+            lines = self._page_lines(page)
+            if self._is_junk_page(lines):
                 continue
 
-            # Filtre pages de signatures / tampons
-            if len(text_simple.strip()) < self.SIGNATURE_MAX_TEXT_LEN and len(page.get_images()) > 0:
-                chunks.append(Chunk(
-                    text=f"[{formation}] Page visée et approuvée par les autorités.",
-                    metadata=build_metadata(
-                        document_name=clean_title,
-                        family_type="B",
-                        formation=formation,
-                        page=idx + 1,
-                    ),
-                ))
-                continue
-
-            # ---------------------------------------------------------------
-            # Text blocks are fetched once per page and reused both to locate
-            # semester headings (for accurate table labeling, right below)
-            # and for the spatial text pass further down.
-            # ---------------------------------------------------------------
-            blocks = page.get_text("dict")["blocks"]
-            text_blocks = [b for b in blocks if "lines" in b]
-
-            # Position (top y) of each "Semestre N" heading on this page, so
-            # that when two recap tables share one page (e.g. Semestre 5 and
-            # Semestre 6 stacked on the same sheet, which happens in the
-            # ISIL cahier des charges) each table is matched to the heading
-            # directly above it rather than both being tagged with whichever
-            # "Semestre" text appears first anywhere on the page.
-            semestre_anchors: List[Tuple[float, str]] = []
-            for b in text_blocks:
-                for line in b["lines"]:
-                    line_text = "".join(s["text"] for s in line["spans"]).strip()
-                    if re.search(r"[\-.]{4,}", line_text):
-                        continue  # table-of-contents leader line
-                    if SEMESTRE_BOUNDARY_RE.match(line_text):
-                        sem_val = normalize_semestre(line_text)
-                        if sem_val:
-                            semestre_anchors.append((b["bbox"][1], sem_val))
-            semestre_anchors.sort(key=lambda t: t[0])
-
-            def semestre_for_y(y_top: float) -> Optional[str]:
-                candidate = None
-                for anchor_y, sem in semestre_anchors:
-                    if anchor_y <= y_top + 1:  # heading must sit above the table
-                        candidate = sem
-                    else:
-                        break
-                return candidate or current_semestre
-
-            # ---------------------------------------------------------------
-            # 2. EXTRACTION ET TRAITEMENT DES TABLEAUX
-            # ---------------------------------------------------------------
+            # --- tableaux récapitulatifs de semestre -------------------------
             table_bboxes = []
             try:
-                tabs = page.find_tables()
+                found_tables = page.find_tables().tables
             except Exception:
-                logger.exception("FamilyB: table extraction failed on page %s of %s", idx + 1, file_path)
-                tabs = []
-
-            for tab in tabs:
+                found_tables = []
+            for tab in found_tables:
+                try:
+                    rows = tab.extract()
+                except Exception:
+                    continue
+                # pymupdf détecte aussi des mises en page (listes de chapitres,
+                # bibliographies) comme des « tableaux » : seuls les vrais
+                # récapitulatifs semestriels (UE / Crédits / Coeff / VHS) sont
+                # traités ici, le reste doit rester dans le corps de la fiche.
+                if not self._is_recap_table(rows):
+                    continue
                 table_bboxes.append(tab.bbox)
-                rows = tab.extract()
+                semestre = self._semestre_for_table(page, tab.bbox)
+                if semestre is None:
+                    semestre = current["semestre"] if current else None
+                if semestre is None:
+                    continue
+                table_lines = self._flatten_table(rows, formation, semestre)
+                if table_lines:
+                    tables.append(
+                        self._build_table_chunk(
+                            semestre, table_lines, page_no, base_meta, niveau_label,
+                            formation, annee_univ,
+                        )
+                    )
 
-                cleaned_rows = []
-                for row in rows:
-                    cells = [strip_arabic(re.sub(r"\s+", " ", cell.strip())) for cell in row if cell and cell.strip()]
-                    if cells:
-                        cleaned_rows.append(" | ".join(cells))
+            if stopped:
+                continue
 
-                # A "recap" table is one of the semester-organization tables
-                # from section II ("Fiche d'organisation semestrielle") —
-                # recognizable by a "Crédits"/"Coeff" style header. They never
-                # contain a "Matière :" anchor, so left in the generic flow
-                # below they would silently merge into whatever fiche happens
-                # to be open — often several pages away and about an
-                # unrelated matière — and inherit its metadata. They are
-                # emitted as their own, clearly-tagged chunk instead.
-                is_recap_table = any(
-                    cell and re.search(r"cr[ée]dits?", cell, re.I)
-                    for row in rows[:2] for cell in row if cell
+            for line in lines:
+                if not line:
+                    continue
+                if is_header_line(line):
+                    continue
+                if table_bboxes and self._is_inside_table(page, line, table_bboxes):
+                    continue
+                if current is not None and STOP_RE.match(line):
+                    stopped = True
+                    break
+
+                m_sem = SEMESTRE_ANCHOR_RE.match(line)
+                if m_sem:
+                    pending_header.append(line)
+                    continue
+
+                m_ue = UE_LINE_RE.match(line)
+                if m_ue:
+                    pending_header.append(line)
+                    continue
+
+                m_mat = MATIERE_LINE_RE.match(line)
+                if m_mat:
+                    close_fiche()
+                    pending_header.append(line)
+                    current = open_fiche(page_no, m_mat.group(1).strip())
+                    pending_header = []
+                    continue
+
+                if current is None:
+                    # Prose institutionnelle / page de garde : ignorée.
+                    continue
+
+                m_cred = CREDITS_LINE_RE.match(line)
+                if m_cred:
+                    current["credits"] = int(m_cred.group(1))
+                m_coef = COEFFICIENT_LINE_RE.match(line)
+                if m_coef:
+                    current["coef"] = int(m_coef.group(1))
+                if pending_header:
+                    buf.extend(pending_header)
+                    pending_header = []
+                if not buf or buf[-1] != line:
+                    buf.append(line)
+
+        close_fiche()
+        return fiches, tables
+
+    # -------------------------------------------------------------------------
+    # Lecture de page
+    # -------------------------------------------------------------------------
+    def _page_lines(self, page: "pymupdf.Page") -> List[str]:
+        """Lignes nettoyées de la page, hors tableaux."""
+        lines: List[str] = []
+        try:
+            raw_lines = page.get_text().split("\n")
+        except Exception:
+            return lines
+        for raw in raw_lines:
+            line = clean_line(strip_arabic(raw))
+            if line:
+                lines.append(line)
+        return lines
+
+    def _is_junk_page(self, lines: List[str]) -> bool:
+        if not lines:
+            return True
+        if len(lines) < self.JUNK_PAGE_MIN_LINES:
+            return False
+        mean_len = sum(len(line) for line in lines) / len(lines)
+        return mean_len < self.JUNK_PAGE_MAX_MEAN_LINE
+
+    @staticmethod
+    def _is_inside_table(page: "pymupdf.Page", line: str, bboxes) -> bool:
+        """Vrai si la ligne appartient à un tableau déjà extrait.
+
+        Les tableaux récapitulatifs sont traités séparément ; leur texte ne
+        doit pas être recopié dans la fiche matière voisine.
+        """
+        if not bboxes:
+            return False
+        try:
+            rects = page.search_for(line)
+        except Exception:
+            return False
+        for rect in rects:
+            for x0, y0, x1, y1 in bboxes:
+                if (
+                    rect.x0 >= x0 - 1
+                    and rect.y0 >= y0 - 1
+                    and rect.x1 <= x1 + 1
+                    and rect.y1 <= y1 + 1
+                ):
+                    return True
+        return False
+
+    @staticmethod
+    def _semestre_for_table(page: "pymupdf.Page", bbox) -> Optional[str]:
+        """Semestre du libellé « Semestre N » situé juste au-dessus du tableau."""
+        _, ty0, _, _ = bbox
+        best = None
+        for n in range(1, 7):
+            for rect in page.search_for(f"Semestre {n}"):
+                if rect.y0 <= ty0 + 2 and rect.y0 > (best[0] if best else -1):
+                    best = (rect.y0, n)
+        return f"S{best[1]}" if best else None
+
+    # -------------------------------------------------------------------------
+    # Fiches matières
+    # -------------------------------------------------------------------------
+    def _build_fiche_chunk(
+        self,
+        fiche: dict,
+        body_lines: List[str],
+        base_meta: dict,
+        niveau_label: str,
+        formation: str,
+        annee_univ: Optional[str],
+    ) -> List[Chunk]:
+        semestre = fiche.get("semestre") or "?"
+        ue = fiche.get("ue") or ""
+        matiere = fiche.get("matiere") or ""
+        credits = fiche.get("credits")
+        coef = fiche.get("coef")
+
+        header_parts = [f"{niveau_label} {formation}", f"Semestre {semestre}"]
+        if ue:
+            header_parts.append(f"UE {ue}")
+        header_parts.append(f"Matière : {matiere}")
+        if annee_univ:
+            header_parts.append(f"Année universitaire {annee_univ}")
+        if credits is not None:
+            header_parts.append(f"Crédits {credits}")
+        if coef is not None:
+            header_parts.append(f"Coefficient {coef}")
+        header = " — ".join(header_parts)
+
+        # Retire l'ancrage "Matière : ..." du corps (déjà dans l'en-tête).
+        body = [
+            line
+            for line in body_lines
+            if not MATIERE_LINE_RE.match(line)
+        ]
+        limit = self.MAX_CHUNK_CHARS - len(header) - 40
+        parts = split_lines(body, max(limit, 500))
+
+        chunks: List[Chunk] = []
+        for index, part in enumerate(parts, 1):
+            suffix = f" (partie {index}/{len(parts)})" if len(parts) > 1 else ""
+            text = f"{header}{suffix}\n\n" + "\n".join(part)
+            text = re.sub(r"\n{3,}", "\n\n", text).strip()
+            chunks.append(
+                Chunk(
+                    text=text,
+                    metadata=build_metadata(
+                        **base_meta,
+                        page=fiche.get("page"),
+                        semestre=semestre if semestre != "?" else None,
+                        ue=ue or None,
+                        matiere=matiere or None,
+                    ),
                 )
-
-                if is_recap_table:
-                    sem = semestre_for_y(tab.bbox[1])
-                    if cleaned_rows:
-                        chunks.append(Chunk(
-                            text=(
-                                f"{(niveau or '').upper()} {formation} > {sem or '?'} > "
-                                f"Organisation semestrielle des enseignements\n"
-                                + "\n".join(cleaned_rows)
-                            ),
-                            metadata=build_metadata(
-                                document_name=clean_title,
-                                family_type="B",
-                                formation=formation,
-                                page=idx + 1,
-                                semestre=sem,
-                            ),
-                        ))
-                else:
-                    fiche_buffer.extend(cleaned_rows)
-
-            # ---------------------------------------------------------------
-            # 3. EXTRACTION DU TEXTE AVEC TRI SPATIAL (Gère les colonnes)
-            # (`blocks` / `text_blocks` were already fetched above.)
-            # ---------------------------------------------------------------
-            sorted_blocks = sorted(
-                text_blocks,
-                key=lambda b: (round(b["bbox"][1], 1), round(b["bbox"][0], 1)),
             )
-
-            for block in sorted_blocks:
-                bx0, by0, bx1, by1 = block["bbox"]
-
-                # FIX: original compared against undefined `py0`/`py1`
-                # (should have been `by0`/`by1`) — a guaranteed NameError
-                # crash on every page that contains at least one table
-                # *and* a text block outside it (i.e. almost every real page).
-                is_inside_table = any(
-                    bx0 >= tx0 and by0 >= ty0 and bx1 <= tx1 and by1 <= ty1
-                    for tx0, ty0, tx1, ty1 in table_bboxes
-                )
-                if is_inside_table:
-                    continue  # déjà extrait via find_tables()
-
-                for line in block["lines"]:
-                    # FIX: iterate per LINE, not per span. Anchors and even
-                    # ordinary sentences are routinely split across spans
-                    # (e.g. bold "Semestre :" + plain " S3" as two spans on
-                    # one line) — matching per span silently lost data (the
-                    # semester number vanished into an un-matched trailing
-                    # span) and produced one buffer entry per span instead of
-                    # per visual line, fragmenting the chunk text.
-                    line_text = "".join(span["text"] for span in line["spans"]).strip()
-                    line_text = strip_arabic(line_text).strip()
-                    if not line_text:
-                        continue
-                    max_size = max((span["size"] for span in line["spans"]), default=0)
-
-                    # Table-of-contents lines ("1- Semestre 1 ----- 18") match
-                    # the same boundary pattern as real fiche headers; the
-                    # dot/dash leader is the tell that this is a TOC entry,
-                    # not an actual "Semestre :" anchor.
-                    is_toc_line = bool(re.search(r"[\-.]{4,}", line_text))
-                    sem_boundary = None if is_toc_line else SEMESTRE_BOUNDARY_RE.match(line_text)
-                    sem_val = normalize_semestre(line_text) if sem_boundary else None
-                    is_new_matiere = bool(MATIERE_LINE_RE.match(line_text))
-
-                    # Close the fiche in progress *before* touching any
-                    # tracked heading, so it is closed under its own metadata.
-                    if (sem_boundary and sem_val) or is_new_matiere:
-                        flush(idx + 1)
-
-                    if max_size > self.H1_FONT_MIN_SIZE:
-                        current_h1 = line_text
-
-                    if sem_boundary and sem_val:
-                        current_semestre = sem_val
-                        current_ue = ""
-                        current_matiere = ""
-
-                    m_ue = UE_LINE_RE.match(line_text)
-                    if m_ue:
-                        current_ue = m_ue.group(1).strip()
-
-                    if is_new_matiere:
-                        current_matiere = MATIERE_LINE_RE.match(line_text).group(1).strip()
-
-                    fiche_buffer.append(line_text)
-
-        # ---------------------------------------------------------------
-        # 4. Traitement du dernier buffer en fin de document
-        # FIX: previously this final chunk omitted `matiere=` (and semestre)
-        # while every other chunk included it — inconsistent schema for the
-        # very last fiche of the document.
-        # ---------------------------------------------------------------
-        flush(len(doc))
-
-        doc.close()
         return chunks
+
+    # -------------------------------------------------------------------------
+    # Tableaux récapitulatifs
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def _is_recap_table(rows: List[list]) -> bool:
+        """Vrai uniquement pour un tableau d'organisation semestrielle."""
+        if not rows or len(rows) < 3:
+            return False
+        width = max(len(row) for row in rows)
+        if width < 8:
+            return False
+        header = [
+            re.sub(r"\s+", " ", str(cell)).strip()
+            for row in rows[:3]
+            for cell in row
+            if cell
+        ]
+        has_credits = any(re.search(r"cr[ée]dits?", cell, re.I) for cell in header)
+        has_coeff = any(re.match(r"coef", cell, re.I) for cell in header)
+        has_ue = any(re.search(r"unit[ée]s?\s+d.enseignement", cell, re.I) for cell in header)
+        return has_credits and has_coeff and has_ue
+
+    def _flatten_table(self, rows: List[list], formation: str, semestre: str) -> List[str]:
+        if formation == "TC-INGENIEUR":
+            return self._flatten_tc_table(rows)
+        return self._flatten_isil_table(rows)
+
+    @staticmethod
+    def _cell(row: list, index: Optional[int]) -> str:
+        if index is None or index >= len(row):
+            return ""
+        value = row[index]
+        if not value:
+            return ""
+        value = PRIVATE_USE_RE.sub("", str(value))
+        value = value.replace("\u00a0", " ")
+        value = re.sub(r"\s*\n\s*", " ", value)
+        value = re.sub(r"\s+", " ", value)
+        return value.strip()
+
+    @staticmethod
+    def _find_col(rows: List[list], labels, exact: bool = False) -> Optional[int]:
+        for row in rows:
+            for idx, cell in enumerate(row):
+                if not cell:
+                    continue
+                value = re.sub(r"\s+", " ", str(cell)).strip().lower()
+                for label in labels:
+                    if (value == label) if exact else value.startswith(label):
+                        return idx
+        return None
+
+    def _flatten_isil_table(self, rows: List[list]) -> List[str]:
+        vhs_col = self._find_col(rows, ["vhs"])
+        coeff_col = self._find_col(rows, ["coeff"])
+        credits_col = self._find_col(rows, ["crédits", "credits"])
+        continu_col = self._find_col(rows, ["continu"])
+        examen_col = self._find_col(rows, ["examen"])
+        c_col = self._find_col(rows, ["c"], exact=True)
+        td_col = self._find_col(rows, ["td"], exact=True)
+        tp_col = self._find_col(rows, ["tp"], exact=True)
+        autres_col = self._find_col(rows, ["autres"])
+
+        out: List[str] = []
+        current_ue = ""
+        for row in rows:
+            first = self._cell(row, 0)
+            if not first or first.lower().startswith(("unité", "unite")):
+                continue
+            if re.match(r"^UE\s", first, re.I):
+                continue  # "UE fondamentales", "UE Méthodologique"...
+            if re.match(r"^UE[A-Z]\d+\s*\(O/P\)", first, re.I):
+                current_ue = first.split("(")[0].strip()
+                continue
+            if first.lower().startswith("total semestre"):
+                credits = self._cell(row, credits_col)
+                coef = self._cell(row, coeff_col)
+                vhs = self._cell(row, vhs_col)
+                details = []
+                if vhs:
+                    details.append(f"VHS {vhs}")
+                for label, col in (
+                    ("C", c_col), ("TD", td_col), ("TP", tp_col), ("Autres", autres_col)
+                ):
+                    value = self._cell(row, col)
+                    if value and value not in ("-", "/"):
+                        details.append(f"{label} {value}")
+                if coef:
+                    details.append(f"Coefficient {coef}")
+                if credits:
+                    details.append(f"Crédits {credits}")
+                out.append(f"{first} : " + ", ".join(details))
+                continue
+
+            parts = [f"- {first}"]
+            if current_ue:
+                parts.append(f"UE {current_ue}")
+            coef = self._cell(row, coeff_col)
+            credits = self._cell(row, credits_col)
+            if coef:
+                parts.append(f"Coefficient {coef}")
+            if credits:
+                parts.append(f"Crédits {credits}")
+            for label, col in (
+                ("C", c_col), ("TD", td_col), ("TP", tp_col), ("Autres", autres_col)
+            ):
+                value = self._cell(row, col)
+                if value and value != "-":
+                    parts.append(f"{label} {value}")
+            vhs = self._cell(row, vhs_col)
+            if vhs:
+                parts.append(f"VHS {vhs}")
+            continu = self._cell(row, continu_col)
+            examen = self._cell(row, examen_col)
+            if continu and continu not in ("/", "-"):
+                parts.append(f"Continu {continu}")
+            if examen and examen not in ("/", "-"):
+                parts.append(f"Examen {examen}")
+            out.append(" | ".join(parts))
+        return out
+
+    @staticmethod
+    def _format_ue_group(group: str) -> str:
+        """« UE Fondamentale Code : UEF 5.5.1 Crédits : 12 … » → lisible."""
+        match = re.match(r"^(UE\s+[^ ]+)", group, re.I)
+        label = match.group(1) if match else group
+        details = []
+        code = re.search(r"code\s*:\s*([A-Z0-9.\s]+?)(?:\s+Cr[ée]dits|\s+Coefficients|$)", group, re.I)
+        credits = re.search(r"cr[ée]dits\s*:\s*(\d+)", group, re.I)
+        coef = re.search(r"coefficients?\s*:\s*(\d+)", group, re.I)
+        if code:
+            details.append(f"Code {code.group(1).strip()}")
+        if credits:
+            details.append(f"Crédits {credits.group(1)}")
+        if coef:
+            details.append(f"Coefficients {coef.group(1)}")
+        return f"{label} ({', '.join(details)})" if details else group
+
+    def _flatten_tc_table(self, rows: List[list]) -> List[str]:
+        credits_col = self._find_col(rows, ["crédits", "credits"])
+        coeff_col = self._find_col(rows, ["coef"])
+        vhs_col = self._find_col(rows, ["vhs"])
+        continu_col = self._find_col(rows, ["continu"])
+        examen_col = self._find_col(rows, ["examen"])
+        c_col = self._find_col(rows, ["c"], exact=True)
+        td_col = self._find_col(rows, ["td"], exact=True)
+        tp_col = self._find_col(rows, ["tp"], exact=True)
+        matiere_col = self._find_col(rows, ["intitulés des matières", "intitules des matieres"])
+        ue_col = 0 if matiere_col != 0 else None
+
+        out: List[str] = []
+        current_ue = ""
+        for row in rows:
+            group = self._cell(row, ue_col)
+            matiere = self._cell(row, matiere_col)
+            if group and re.search(r"\bcode\s*:", group, re.I):
+                current_ue = self._format_ue_group(group)
+            if not matiere:
+                if group.lower().startswith("total semestre"):
+                    credits = self._cell(row, credits_col)
+                    coef = self._cell(row, coeff_col)
+                    vhs = self._cell(row, vhs_col)
+                    details = []
+                    if vhs:
+                        details.append(f"VHS {vhs}")
+                    for label, col in (("C", c_col), ("TD", td_col), ("TP", tp_col)):
+                        value = self._cell(row, col)
+                        if value and value not in ("-", "/"):
+                            details.append(f"{label} {value}")
+                    if coef:
+                        details.append(f"Coefficient {coef}")
+                    if credits:
+                        details.append(f"Crédits {credits}")
+                    out.append(f"{group} : " + ", ".join(details))
+                continue
+            if matiere.lower().startswith(("unités", "unites", "intitulés", "intitules")):
+                continue
+
+            parts = [f"- {matiere}"]
+            if current_ue:
+                parts.append(current_ue)
+            credits = self._cell(row, credits_col)
+            coef = self._cell(row, coeff_col)
+            if coef:
+                parts.append(f"Coefficient {coef}")
+            if credits:
+                parts.append(f"Crédits {credits}")
+            for label, col in (("C", c_col), ("TD", td_col), ("TP", tp_col)):
+                value = self._cell(row, col)
+                if value and value != "-":
+                    parts.append(f"{label} {value}")
+            vhs = self._cell(row, vhs_col)
+            if vhs:
+                parts.append(f"VHS {vhs}")
+            continu = self._cell(row, continu_col)
+            examen = self._cell(row, examen_col)
+            if continu and continu not in ("/", "-"):
+                parts.append(f"Continu {continu}")
+            if examen and examen not in ("/", "-"):
+                parts.append(f"Examen {examen}")
+            out.append(" | ".join(parts))
+        return out
+
+    def _build_table_chunk(
+        self,
+        semestre: str,
+        table_lines: List[str],
+        page_no: int,
+        base_meta: dict,
+        niveau_label: str,
+        formation: str,
+        annee_univ: Optional[str],
+    ) -> Chunk:
+        header_parts = [
+            f"{niveau_label} {formation}",
+            f"Semestre {semestre}",
+            "Organisation semestrielle des enseignements",
+        ]
+        if annee_univ:
+            header_parts.append(f"Année universitaire {annee_univ}")
+        header = " — ".join(header_parts)
+        text = header + "\n\n" + "\n".join(table_lines)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        return Chunk(
+            text=text,
+            metadata=build_metadata(
+                **base_meta,
+                page=page_no,
+                semestre=semestre,
+            ),
+        )

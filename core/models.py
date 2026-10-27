@@ -13,6 +13,8 @@ class PipelineConfig(BaseModel):
     max_workers: int = Field(default=4, description="Nombre de processus parallèles")
     batch_size_excel: int = 15
     batch_size_examens: int = 8
+    header_search_limit: int = 20
+    min_valid_col_map_fields: int = 2
     
     reset_ctx_per_page: bool = False
 

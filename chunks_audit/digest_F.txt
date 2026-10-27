@@ -1,0 +1,21 @@
+FICHIER chunks_famille_F.jsonl  —  77 chunks
+C0 family_type: {'F': 77}
+C5 tailles: min=80 max=3543 moy=727 | <150: 6 ['L2(117)', 'L48(144)', 'L53(110)', 'L63(80)', 'L64(122)', 'L75(146)'] | >6000: 0 []
+C6 vides: [] | doublons norm: 0 [] | points/underscores>8: 4 chunks {6: 2, 7: 7, 20: 1, 77: 1} | lignes 'page N': 1 dans 1 chunks | arabe: 37 ['L4', 'L12', 'L15', 'L16', 'L17', 'L18', 'L19', 'L20', 'L31', 'L38']
+C7 remplissage: {'document_name': '77/77', 'formation': '0/77', 'niveau': '0/77', 'semestre': '0/77', 'ue': '0/77', 'matiere': '0/77', 'annee_universitaire': '0/77', 'page': '0/77', 'sheet_name': '0/77', 'block_range': '0/77', 'block_title': '0/77', 'chapter': '10/77', 'article_title': '67/77', 'is_fallback': '77/77'}
+C7 document_name (3): {'arrete71403nov2011': 5, 'decret 2001 tache accessoire 1': 47, '994': 25}
+C7 is_fallback: 0/77
+C1/C8 premières lignes top12:
+       1x | 'Préambule / Objet du Arrêté n° 714 :'
+       1x | 'Arrêté n° 714 | Article 1° :'
+       1x | 'Arrêté n° 714 | Art. 2 :'
+       1x | 'Arrêté n° 714 | Art 3 :'
+       1x | 'Arrêté n° 714 | Art. 4 :'
+       1x | 'Préambule / Objet du Arrêté n° 2001 :'
+       1x | 'Préambule / Objet du Décret exécutif n° 01-293 :'
+       1x | 'Décret exécutif n° 01-293 | Article 1er :'
+       1x | 'Décret exécutif n° 01-293 | Art. 2 :'
+       1x | 'Décret exécutif n° 01-293 | Art. 3 :'
+       1x | 'Décret exécutif n° 01-293 | Art. 4 :'
+       1x | 'Décret exécutif n° 01-293 | Art. 5 :'
+Patterns: {'Arrêté n°': '7 L1,L2,L3,L4,L5,L6,L66', '[Aa]rticle': '20 L2,L7,L8,L11,L13,L15,L16,L17', '[Cc]hapitre': '3 L6,L33,L40', '\\bVu\\b': '6 L1,L7,L22,L49,L51,L66'}

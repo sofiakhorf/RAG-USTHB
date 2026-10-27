@@ -1,0 +1,493 @@
+========== FAMILLE B ==========
+[B-P1 ALGO3] 2 chunk(s)
+  L81: '| 3 | 4 | 40% | 60%\nALGO3 : Algorithmique et structures de données | 84h | 3h | 1h30 | 1h30 | 3h | 3 | 5 | 40% | 60%\nUE Méthodologique\nUEM31'
+  L95: 'ISIL > S3 > UEF31 > ALGO3 (Algorithmique et structures de données)\nMatière : ALGO3 (Algorithmique et structures de données)\nCrédits : 5\nCoef'
+[B-P1bis algo3 crédits] 2 chunk(s)
+  L81: '| 3 | 4 | 40% | 60%\nALGO3 : Algorithmique et structures de données | 84h | 3h | 1h30 | 1h30 | 3h | 3 | 5 | 40% | 60%\nUE Méthodologique\nUEM31'
+  L95: 'ISIL > S3 > UEF31 > ALGO3 (Algorithmique et structures de données)\nMatière : ALGO3 (Algorithmique et structures de données)\nCrédits : 5\nCoef'
+[B-P2 A-NUM] 4 chunk(s)
+  L78: 'héorie des\nGraphes, Analyse Numérique, Probabilités et Statistiques).\n\uf0d8 Compétences requises pour le développement et le test des logiciels.'
+  L81: 'ologique\nUEM31(O/P)\nA-NUM : Analyse Numérique | 42h | 1h30 | 1h30 | - | 1h30 | 2 | 4 | 40% | 60%\nLOGIQUE : Logique Mathématique | 42h | 1h30'
+  L97: 'ISIL > S3 > UEM31 > A-NUM (Analyse Numérique)\nMatière : A-NUM (Analyse Numérique)\nCrédits : 4\nCoefficient : 2\nObjectifs de l’enseignement (D'
+  L101: ' 1 et 2, vus en L1, Analyse numérique.\nContenu de la matière :\n\uf0fc 1-Théorie des Probabilités.  3 semaines (4h 30mn de cours et 4h 30mn de td '
+[B-F anglais ISIL] 13 chunk(s)
+  L11: ' Coefficients : 1 | Anglais | 1 | 1 | 1h30 | 22h30 | 100%\nTotal Semestre 4 | 30 | 29 | 12h00 | 6h00 | 12h00 | 450h'
+  L41: 'expression orale en anglais :\nexposés, soutenances, communication en groupe. Ce cours devrait laisser autant que possible la\nliberté aux étu'
+  L75: 'S4 > Transversale > Anglais\nMatière : Anglais\nCrédits : 1\nCoefficient :  1    VHHs :  Cours (1h30)\nObjectifs de l’enseignement :\nL’objectif '
+  L77: 'sversale\nUET11(O/P)\nAnglais : Langue Etrangère | 21h00 | 1h30 | 1 | 2 | 100%\nTotal Semestre 1 | 350h00 | 9h00 | 13h30 | 3h00 | 17 | 30'
+  L80: 'sversale\nUET11(O/P)\nAnglais : Langue Etrangère\n21h00\n1h30\n1\n2\n100%\nTotal Semestre 1\n350h00\n9h00\n13h30\n3h00\n17\n30\n1 Le calcul est fait sur la'
+  L81: 'sversale\nUET31(O/P)\nANGLAIS | 21h00 | - | 1h30 | - | 1h | 1 | 2 | - | 100%\nTotal Semestre 3 | 357h00 | 12h00 | 10h30 | 3h00 | 13h00 | 18 | 3'
+  L83: 'sversale\nUET11(O/P)\nANGLAIS | 21h00 | - | 1h30 | - | 1h | 1 | 2 | - | 100%\nTotal Semestre 4 | 357h00 | 10h30 | 8h15 | 6h45 | 11h30 | 18 | 30'
+  L85: 'sversale\nUET51(O/P)\nANGLAIS | 10h30 | 1h30/15j | 1h | 1 | 2 | - | 100%\nTotal Semestre 5 | 367h30 | 10h30 | 9h00 | 6h45 | 12h30 | 19 | 30'
+  L87: 'sversale\nUET11(O/P)\nANGLAIS\n21h00\n-\n1h30\n-\n1h\n1\n2\n-\n100%\nTotal Semestre 4\n357h00\n10h30\n8h15\n6h45\n11h30\n18\n30\nTotal VH / semaine = 25h30’\nEta'
+  L88: 'stre 5 :\nUET51(O/P)\nANGLAIS\n10h30\n1h30/15j\n1h\n1\n2\n-\n100%\nTotal Semestre 5\n367h30\n10h30\n9h00\n6h45\n12h30\n19\n30\nTotal VH / semaine = 26h15’'
+  L105: 'ISIL > S3 > UET31 > ANGLAIS\nMatière : ANGLAIS\nEnseignant responsable de la matière : (dépend du centre des langues de l’USTHB)\nCrédits : 2\nC'
+  L119: 'ISIL > S4 > UET41 > ANGLAIS\nMatière : ANGLAIS\nCrédits : 2\nCoefficient : 1\nObjectifs de l’enseignement (Décrire ce que l’étudiant est censé a'
+[B-Piège Algorithmique (24 chunks déjà vus)] 3 chunk(s)
+  L33: 'bles recommandées : algorithmique et structures de données, structure\nmachine, notions sur les systèmes d’exploitation.\nContenu de la matièr'
+  L81: '| 40% | 60%\nALGO3 : Algorithmique et structures de données | 84h | 3h | 1h30 | 1h30 | 3h | 3 | 5 | 40% | 60%\nUE Méthodologique\nUEM31(O/P)\nA-'
+  L95: 'S3 > UEF31 > ALGO3 (Algorithmique et structures de données)\nMatière : ALGO3 (Algorithmique et structures de données)\nCrédits : 5\nCoefficient'
+[B-A semestre 4 TC] 37 chunk(s)
+  L6: 'OIRE TC-INGENIEUR > S4 > ? > ?\n4. Semestre 4\n21\n5. Récapitulatif global de la formation\n22\nIII - Programmes détaillés par matière\n23\nIV – Ac'
+  L11: 'OIRE TC-INGENIEUR > S4 > Organisation semestrielle des enseignements\nUnités d’Enseignement | Intitulés des matières | Crédits | Coef. | V.H '
+  L13: "OIRE TC-INGENIEUR > S4 > ? > ?\nSemestre 4 :\nUnités d’Enseignement\nIntitulés des matières\nCrédits\nCoef.\nV.H hebdomadaire\nVHS\nMode d'évaluatio"
+  L58: 'OIRE TC-INGENIEUR > S4 > fondamentale > ?\nSemestre : 04\nUnité d’enseignement : fondamentale'
+  L59: 'OIRE TC-INGENIEUR > S4 > fondamentale > Programmation orientée objet 2\nMatière : Programmation orientée objet 2\nCrédits : 6\nCoefficient : 6 '
+  L60: 'OIRE TC-INGENIEUR > S4 > Fondamentale > ?\nSemestre : 04\nUnité d’enseignement : Fondamentale'
+  L61: 'OIRE TC-INGENIEUR > S4 > Fondamentale > Introduction aux systèmes d’information\nMatière : Introduction aux systèmes d’information\nCrédits : '
+  L62: 'OIRE TC-INGENIEUR > S4 > Fondamentale > ?\nSemestre : 04\nUnité d’enseignement : Fondamentale'
+  L63: 'OIRE TC-INGENIEUR > S4 > Fondamentale > Introduction aux réseaux informatiques\nMatière : Introduction aux réseaux informatiques\nCrédits : 5\n'
+  L64: 'OIRE TC-INGENIEUR > S4 > Fondamentale > ?\nSemestre : 04\nUnité d’enseignement : Fondamentale'
+  L65: 'OIRE TC-INGENIEUR > S4 > Fondamentale > Introduction aux bases de données\nMatière : Introduction aux bases de données\nCrédits : 3\nCoefficien'
+  L66: 'OIRE TC-INGENIEUR > S4 > Fondamentale > ?\nSemestre : 04\nUnité d’enseignement : Fondamentale'
+[B-SR Théorie des Graphes] 4 chunk(s)
+  L11: ' Coefficients : 9 | Théorie des graphes | 3 | 3 | 1h30 | 1h30 | 45h | 40% | 60%\nProjet pluridisciplinaire | 6 | 6 | 6h00 | 90h | 100%\nUE Tra'
+  L69: 'S4 > Fondamentale > Théorie des graphes\nMatière : Théorie des graphes\nCrédits : 3\nCoefficient :  3    VHHs :  Cours (1h30)   TD (1h30)\nObjec'
+  L83: 'ue\nUEM41(O/P)\nTHG : Théorie des Graphes | 42h | 1h30 | 1h30 | - | 1h30 | 2 | 4 | 40% | 60%\nPWEB : Programmation Web | 42h | 1h30 | - | 1h30 '
+  L115: '> S4 > UEM41 > ThG (Théorie des Graphes)\nMatière : ThG (Théorie des Graphes)\nCrédits : 4\nCoefficient : 2\nObjectifs de l’enseignement (Décrir'
+
+========== FAMILLE C (dans C-D) ==========
+[C-P1 promoteur 003/2024] 1 chunk(s)
+  L95: "24-2025]\nN° Projet: 003/2024 | N° GRP: ISIL 019 | TITRE du Sujet de PFE: conception information et dévelopement d'une application d'automati"
+[C-P2 Biopharm] 5 chunk(s)
+  L28: 'utique | Organisme: Biopharm'
+  L29: 't fini | Organisme: Biopharm'
+  L30: 'ations | Organisme: Biopharm'
+  L66: 'jets Master]\nSujet: Biopharm1 : Mise en place d’une CMDB (Change Management Data Base) pour les machines de production\nRemarque: Etant donné'
+  L67: 'jets Master]\nSujet: Biopharm2 : Système d’aide à la validation des systèmes informatisés dans l’industrie pharmaceutique\nRemarque: Etant don'
+[C-P3 Zeon-soft] 27 chunk(s)
+  L5: 'uelles | Organisme: Zeon-soft'
+  L6: 'ptable | Organisme: Zeon-soft'
+  L7: 'yatic" | Organisme: Zeon-soft'
+  L8: 'lients | Organisme: Zeon-soft'
+  L9: 'lients | Organisme: Zeon-soft'
+  L10: 'éfinis | Organisme: Zeon-soft'
+  L11: 'ociaux | Organisme: Zeon-soft'
+  L12: 'bution | Organisme: Zeon-soft'
+  L32: 'uelles | Organisme: Zeon-soft'
+  L33: 'Voyage | Organisme: Zeon-soft'
+  L34: 'ptable | Organisme: Zeon-soft'
+  L35: 'romag" | Organisme: Zeon-soft'
+  L36: 'sonnel | Organisme: Zeon-soft'
+  L37: 'eprise | Organisme: Zeon-soft'
+  L38: 'table) | Organisme: Zeon-soft'
+  L39: 'urant) | Organisme: Zeon-soft'
+  L40: 'onique | Organisme: Zeon-soft'
+  L41: 'mption | Organisme: Zeon-soft'
+  L42: 'ndants | Organisme: Zeon-soft'
+  L43: 'érique | Organisme: Zeon-soft'
+[C-P4 Metro Alger] 2 chunk(s)
+  L58: "— 2022-2023]\nSujet: Metro d'Alger : Module Suivi des habilitations : un module pour la gestion et le suivi des habilitations pour le personn"
+  L59: "— 2022-2023]\nSujet: Metro d'Alger : Module Médecine du travail : un module pour la gestion des aptitudes physique du personnel.\nRemarque: Et"
+[C-P5 ISIL 021] 2 chunk(s)
+  L93: ' 001/2024 | N° GRP: ISIL 021 | TITRE du Sujet de PFE: application web gestion e-commerce | Entreprise ou Organisme: row studio | Promoteur: '
+  L513: 'neau: 10h30\nProjet: ISIL 021 | Président: GUEBAILI, RATIBA | Membres: HANK, KARIMA'
+[C: promoteur vide] 0 chunk(s)
+
+========== FAMILLE D (dans C-D) ==========
+[D-P1 ISIL 010] 2 chunk(s)
+  L94: ' 002/2024 | N° GRP: ISIL 010 | TITRE du Sujet de PFE: Apprentissage continuel (Few-Shot Learning) pour la détection des maladies du blé | En'
+  L430: 'neau: 10h30\nProjet: ISIL 010 | Président: BOUKHEDOUMA, SAIDA | Membres: BOUCHENE, SABRINA'
+[D-P3 02/06/2025 14:00] 10 chunk(s)
+  L469: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 13h00 - 14h30\nProjet: ISIL 040 | Président: MAHDAOUI, LATIFA | Membres: BOUCHEKIR, REDOUANE'
+  L470: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 13h00 - 14h30\nProjet: ACAD 083 | Président: HADDOUCHE, NADIA | Membres: FERRAHI, IBTISSEM'
+  L476: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 14h00\nProjet: ACAD 046 | Président: BOUKALA, MD CHERIF | Membres: AOUMEUR NOURELHOUDA'
+  L477: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 14h00\nProjet: ACAD 059 | Président: BESSAA, BRAHIM | Membres: MAYATA, RAOUF'
+  L478: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 14h00\nProjet: ISIL 065 | Président: BOUKRA, ABDELMADJID | Membres: HAOUARI, TAHA'
+  L479: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 14h00\nProjet: ACAD 079 | Président: BOUYAKOUB, FAYÇAL | Membres: BOULKRINAT, SAMIA'
+  L569: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 14h00\nProjet: ISIL 001 | Président: SELMOUNE, NAZIH | Membres: BELGUERCHE, NADIA'
+  L570: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 14h00\nProjet: ACAD 057 | Président: MAZOUZ, SAMIA | Membres: DJIROUNE, RAHMA'
+  L571: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 14h00\nProjet: ACAD 061 | Président: KHENNAK, ILYES | Membres: NEMOUCHI, HAMZA'
+  L572: ' lundi 2 juin 2025 (02/06/2025) | Créneau: 14h00\nProjet: ACAD 073 | Président: TAMEN, ZAHIA | Membres: ZELLAL, NASSIM'
+[D-P4 matricule] 2 chunk(s)
+  L606: '\nN°: 1 | Matricule: 212131025548 | Nom: AFNOUKH | Prénom: Yassine | Etat: ADM | Groupe TD: 1'
+  L667: '| Prénom | Etat\n1 | 212131025548 | AFNOUKH | Yassine | ADM\n3 | 212131078847 | AOUANE | HICHEM | ADM\n11 | 212131078997 | BENHAGOUGA | Raouaa '
+D-P5 M2 SSI chunks: 63
+[D: présence semaine] 1 chunk(s)
+  L266: 'stème de gestion de présence et de contrôle d’accès intelligent basé sur la blockchain et l’IoT | Entreprise ou Organisme: USTHB | Promoteur'
+[D-P7 ACAD] 210 chunk(s)
+  L104: ' 011/2024 | N° GRP: ACAD 070 | TITRE du Sujet de PFE: Développement d’une plateforme de gestion de rendez-vous médicaux intégrant une généra'
+  L108: ' 013/2024 | N° GRP: ACAD 015 | TITRE du Sujet de PFE: Génération de dictionnaires par niveaux et activités pédagogiques en langue Arabe pour'
+  L110: ' 014/2024 | N° GRP: ACAD 018 | TITRE du Sujet de PFE: Prédiction de l’âge osseux chez l’enfant | Entreprise ou Organisme: USTHB | Promoteur:'
+  L113: " 015/2024 | N° GRP: ACAD 021 | TITRE du Sujet de PFE: Gestion de l'interopérabilité du système e-sante | Entreprise ou Organisme: USTHB | Pr"
+  L114: " 015/2024 | N° GRP: ACAD 063 | TITRE du Sujet de PFE: gestion de l'interopérabilité du système e-santé,applicationve-santé/ministère de l'in"
+  L123: ' 020/2024 | N° GRP: ACAD 089 | TITRE du Sujet de PFE: Plateforme en ligne pour optimisation des services de transport en commun: cas des tra'
+  L133: ' 028/2024 | N° GRP: ACAD 026 | TITRE du Sujet de PFE: An application for Converting Arabic manuscripts into Text | Entreprise ou Organisme: '
+  L134: ' 028/2024 | N° GRP: ACAD 073 | TITRE du Sujet de PFE: An application for Converting Arabic manuscripts into Text | Entreprise ou Organisme: '
+
+========== FAMILLE E ==========
+--- L1 (2476c) ---
+Formulaire : Semestre2et Semestre 1.
+Champs requis : Sectionn, semestre, S2 31/5/2025 08, ALGEBR2 AUDITORIUM 1/6/2025 08, ALGO2 AUDITORIUM 2/6/2025 08, ANALYS2 AUDITORIUM 4/6/2025 08, PROB STAT AUDITORIUM 14/6/2025 08, ARCHI AUDITORIUM 15/6/2025 08, S1 22/6/2025 08, ALGEBR1 AUDITORIUM 23/6/2025 08, ALG01 AUDITORIUM 24/6/2025 08, ANALYS1 AUDITORIUM 26/6/2025 08, STRM AUDITORIUM 29/6/2025 15, ALGEBR2 TMA+DM11 1/6/2025 08, ALGO2 TMA+DM11 2/6/2025 08.
+=========================
+Sectionn : A, semestre : S2 31/5/2025 08:30 ALGEBR2 AUDITORIUM 1/6/2025 08:30:00 ALGO2 AUDITORIUM 2/6/2025 08:30:00 ANALYS2 AUDITORIUM 4/6/2025 08:30:00 PROB STAT AUDITORIUM 14/6/2025 08:30:00 ARCHI AUDITORIUM 15/6/2025 08:30:00 LOG MATH AUDITORIUM
+semestre : S1 22/6/2025 08:30:00 ALGEBR1 AUDITORIUM 23/6/2025 08:30:00 ALG01 AUDITORIUM 24/6/2025 08:30:00 ANALYS1 AUDITORIUM 26/6/2025 08:30:00 STRM AUDITORIUM 29/6/2025 15:30:00 ISE1 AUDITORIUM
+Sectionn : B, semestre : S2 31/5/2025 08:30:00 ALGEBR2 AUDITORIUM 1/6/2025 08:30:00 ALGO2 AUDITORIUM 2/6/2025 08:30:00 ANALYS2 AUDITORIUM 4/6/2025 08:30:00 PROB STAT AUDITORIUM 14/6/2025 08:30:00 ARCHI AUDITORIUM 15/6/2025 08:30:00 LOG MATH AUDITORIUM
+semestre : S1 22/6/2025 08:30:00 ALGEBR1 AUDITORIUM 23/6/2025 08:30:00 ALG01 AUDITORIUM 24/6/2025 08:30:00 ANALYS1 AUDITORIUM 26/6/2025 08:30:00 STRM AUDITORIUM 29/6/2025 15:30:00 ISE1 AUDITORIUM
+FACULTE D'INFORMATIQUE
+Planning des Examens de Rattrapages
+Semestre 2 et Semestre 1 Année Universitaire 2024/2025
+Page 1 de 33
+Sectionn : C, semestre : S2 31/5/2025 08:30:00 ALGEBR2 TMA+DM11 1/6/2025 08:30:00 ALGO2 TMA+DM11 2/6/2025 08:30:00 ANALYS2 TMA+DM11 4/6/2025 08:30:00 PROB STAT TMA+DM11 14/6/2025 08:30:00 ARCHI TMA+DM11 15/6/2025 08:30:00 LOG MATH TMA+DM11
+semestre : S1 22/6/2025 08:30:00 ALGEBR1 TMA+DM11 23/6/2025 08:30:00 ALG01 TMA+DM11 24/6/2025 08:30:00 ANALYS1 TMA+DM11 26/6/2025 08:30:00 STRM TMA+DM11 29/6/2025 15:30:00 ISE1 TMA+DM11
+Sectionn : D, semestre : S2 31/5/2025 08:30:00 ALGEBR2 TMB+DM12 1/6/2025 08:30:00 ALGO2 TMB+DM12 2/6/2025 08:30:00 ANALYS2 TMB+DM12 4/6/2025 08:30:00 PROB STAT TMB+DM12 14/6/2025 08:30:00 ARCHI TMB+DM12 15/6/2025 08:30:00 LOG MATH TMB+DM12
+semestre : S1 22/6/2025 08:30:00 ALGEBR1 TMB+DM12 23/6/2025 08:30:00 ALG01 TMB+DM12 24/6/2025 08:30:00 ANALYS1 TMB+DM12 26/6/2025 08:30:00 STRM TMB+DM12 29/6/2025 15:30:00 ISE1 TMB+DM12
+FACULTE D'INFORMATIQUE
+Planning des Examens de Rattrapages
+Semestre 2 et Semestre 1 Année Universitaire 2024/2025
+Page 2 de 33
+--- L2 (13404c) ---
+Semestre 2 Session 1
+Année Universitaire 2025/2026       
+Année
+Spécialité
+Section
+Date
+Horaire
+Module
+LOCAUX
+ING1
+INFO
+A
+10/05/2026
+08H30-10H00
+ALGBR
+AUDITORIUM1-
+11/05/2026
+08H30-10H00
+ALG02
+AUDITORIUM1-
+12/05/2026
+08H30-10H00
+ANAL.M
+AUDITORIUM1-
+14/05/2026
+08H30-10H00
+PROBA.STAT
+AUDITORIUM1-
+17/05/2026
+08H30-10H00
+ARCHI2
+AUDITORIUM1-
+19/05/2026
+08H30-10H00
+LOG
+AUDITORIUM1-
+B
+10/05/2026
+08H30-10H00
+ALGBR
+AUDITORIUM2-
+11/05/2026
+08H30-10H00
+ALG02
+AUDITORIUM2-
+12/05/2026
+08H30-10H00
+ANAL.M
+AUDITORIUM2-
+14/05/2026
+08H30-10H00
+PROBA.STAT
+AUDITORIUM2-
+17/05/2026
+08H30-10H00
+ARCHI2
+AUDITORIUM2-
+19/05/2026
+08H30-10H00
+LOG
+AUDITORIUM2-
+C
+10/05/2026
+08H30-10H00
+ALGBR
+M, N, O
+11/05/2026
+08H30-10H00
+ALG02
+M, N, O
+12/05/2026
+08H30-10H00
+ANAL.M
+M, N, O
+14/05/2026
+08H30-10H00
+PROBA.STAT
+M, N, O
+17/05/2026
+08H30-10H00
+ARCHI2
+M, N, O
+19/05/2026
+08H30-10H00
+LOG
+M, N, O
+D
+10/05/2026
+08H30-10H00
+ALGBR
+TMA, TMB, DM11, DM12-
+11/05/2026
+08H30-10H00
+ALG02
+TMA, TMB, DM11, DM12-
+12/05/2026
+08H30-10H00
+ANAL.M
+TMA, TMB, DM11, DM12-
+14/05/2026
+08H30-10H00
+PROBA.STAT
+TMA, TMB, DM11, DM12-
+17/05/2026
+08H30-10H00
+ARCHI2
+TMA, TMB, DM11, DM12-
+19/05/2026
+08H30-10H00
+LOG
+TMA, TMB, DM11, DM12-
+FACULTE D'INFORMATIQUE
+Planning des Examens
+Page 1 de 11
+Semestre 2 Session 1
+Année Universitaire 2025/2026       
+Année
+Spécialité
+Section
+Date
+Horaire
+Module
+LOCAUX
+FACULTE D'INFORMATIQUE
+Planning des Examens
+ING2
+INFO
+A
+11/05/2026
+15H30-17H00
+THG
+C1,C2,C3,C4-
+13/05/2026
+15H30-17H00
+Intro Bases de Donnees
+C1,C2,C3,C4-
+16/05/2026
+15H30-17H00
+Intro SYS EXPL
+C1,C2,C3,C4-
+18/05/2026
+15H30-17H00
+THL
+C1,C2,C3,C4-
+19/05/2026
+13H45-15H15
+POO2
+119T,125T, 155T
+20/05/2026
+15H30-17H00
+Intro Reseau Info
+C1,C2,C3,C4-
+21/05/2026
+13H45-15H15
+Déontologie
+C1,C2,C3,C4-
+B
+11/05/2026
+15H30-17H00
+THG
+D1,D2,D3,D4 -
+13/05/2026
+15H30-17H00
+Intro Bases de Donnees
+D1,D2,D3,D4 -
+16/05/2026
+15H30-17H00
+Intro SYS EXPL
+D1,D2,D3,D4 -
+18/05/2026
+15H30-17H00
+THL
+D1,D2,D3,D4 -
+19/05/2026
+13H45-15H15
+POO2
+161T, 167T,135D
+20/05/2026
+15H30-17H00
+Intro Reseau Info
+D1,D2,D3,D4 -
+21/05/2026
+13H45-15H15
+Déontologie
+D1,D2,D3,D4 -
+C
+11/05/2026
+15H30-17H00
+THG
+D5,D6,D7,D8-
+13/05/2026
+15H30-17H00
+Intro Bases de Donnees
+D5,D6,D7,D8-
+16/05/2026
+15H30-17H00
+Intro SYS EXPL
+D5,D6,D7,D8-
+18/05/2026
+15H30-17H00
+THL
+D5,D6,D7,D8-
+19/05/2026
+13H45-15H15
+POO2
+A,B,C
+20/05/2026
+15H30-17H00
+Intro Reseau Info
+D5,D6,D7,D8-
+21/05/2026
+13H45-15H15
+Déontologie
+D5,D6,D7,D8-
+Page 2 de 11
+Semestre 2 Session 1
+Année Universitaire 2025/2026       
+Année
+Spécialité
+Section
+Date
+Horaire
+Module
+LOCAUX
+FACULTE D'INFORMATIQUE
+Planning des Examens
+ING3
+IA
+A
+11/05/2026
+1
+--- L3 (4100c) ---
+Formulaire : Année.
+Champs requis : Procédure.
+=========================
+FACULTE D'INFORMATIQUE Planning des Examens M2 (Rattrapage) Semestre 1 Session 2 - Année 2025/2026
+Année | Spécialité | Date | Horaire | Module | Salle
+BIGDATA | 8/2/2026 | 10H15 - 11H45 | ANADISS | Bibliothèque Faculté
+9/2/2026 | 10H15 - 11H45 | OPTDIS | Bibliothèque Faculté
+10/2/2026 | 12H00 - 13H30 | TBI-SIG | Bibliothèque Faculté
+11/2/2026 | 10H15 - 11H45 | TIAD | Bibliothèque Faculté
+12/2/2026 | 12H00 - 13H30 | SOLO | Bibliothèque Faculté
+14/2/2026 | 08H30 - 10H00 | DESIN | Bibliothèque Faculté
+15/2/2026 | 10H15 - 11H45 | ANGLAIS | Bibliothèque Faculté
+16/2/2026 | 08H30 - 10H00 | BDABD | Bibliothèque Faculté
+BIOINFO | 9/2/2026 | 12H00 - 13H30 | MCA | Bibliothèque Faculté
+10/2/2026 | 12H00 - 13H30 | SE | Bibliothèque Faculté
+11/2/2026 | 08H30 - 10H00 | VDRA | Bibliothèque Faculté
+12/2/2026 | 10H15 - 11H45 | ACP | Bibliothèque Faculté
+14/2/2026 | 12H00 - 13H30 | FD2 | Bibliothèque Faculté
+15/2/2026 | 10H15 - 11H45 | ANGLAIS | Bibliothèque Faculté
+16/2/2026 | 10H15 - 11H45 | BSD | Bibliothèque Faculté
+HPC | 9/2/2026 | 08H30 - 10H00 | Construction de systèmes Parallèles | Bibliothèque Faculté
+10/2/2026 | 10H15 - 11H45 | Imagerie Médicale et Parallélisme | Bibliothèque Faculté
+11/2/2026 | 12H00 - 13H30 | Systèmes d'exploitation des ordinateurs mul | tiproBcibelsiosethuèrsque Faculté
+12/2/2026 | 08H30 - 10H00 | Programmation Multi-Cœurs | Bibliothèque Faculté
+14/2/2026 | 10H15 - 11H45 | Administration et Gestion des grilles de calcu | l Bibliothèque Faculté
+15/2/2026 | 10H15 - 11H45 | ANGLAIS | Bibliothèque Faculté
+16/2/2026 | 08H30 - 10H00 | Calcul Embarqué | Bibliothèque Faculté
+Page 1 de 3
+FACULTE D'INFORMATIQUE Planning des Examens M2 (Rattrapage) Semestre 1 Session 2 - Année 2025/2026
+Année | Spécialité | Date | Horaire | Module | Salle
+IL | 9/2/2026 | 08H30 - 10H00 | RC | Bibliothèque Faculté
+10/2/2026 | 10H15 - 11H45 | SDED | Bibliothèque Faculté
+11/2/2026 | 12H00 - 13H30 | SIC | Bibliothèque Faculté
+12/2/2026 | 08H30 - 10H00 | ASS QUAL | Bibliothèque Faculté
+14/2/2026 | 10H15 - 11H45 | CAGL | Bibliothèque Faculté
+15/2/2026 | 10H15 - 11H45 | ANGLAIS | Bibliothèque Faculté
+16/2/2026 | 08H30 - 10H00 | MPDL | Bibliothèque Faculté
+MIV | 9/2/2026 | 10H15 - 11H45 | RCR | Bibliothèque Faculté
+10/2/2026 | 12H00 - 13H30 | VD | Bibliothèque Faculté
+11/2/2026 | 08H30 - 10H00 | SEM | Bibliothèque Faculté
+12/2/2026 | 10H15 - 11H45 | RESEAUX | Bibliothèque Faculté
+14/2/2026 | 12H00 - 13H30 | TJ | Bibliothèque Faculté
+15/2/2026 | 08H30 - 10H00 | GPR | Bibliothèque Faculté
+16/2/2026 | 08H30 -
+
+========== FAMILLE G ==========
+[G-P1 BOUDHAR] 1 chunk(s)
+  L13: '25/2026.\nÉtudiant : BOUDHAR MERIEM HIBATALLAH — matricule 232331576112 — n° 12 dans le PV.\nUE C00F0001S : algo 3 = 14.5 ; archi1 = 10.0 ; si'
+[G-P2 BENAMAR] 2 chunk(s)
+  L111: '25/2026.\nÉtudiant : BENAMAR Yasmina — matricule 232331378703 — n° 61 dans le PV.\nSemestre 1 : moyenne = 12.27 ; crédits = 30.\nSemestre 2 : m'
+  L112: '25/2026.\nÉtudiant : BENAMARA Mustapha — matricule 232331674818 — n° 62 dans le PV.\nSemestre 1 : moyenne = 10.36 ; crédits = 30.\nSemestre 2 :'
+G: chunks PV dette: 0
+G-F1 moyenne sem >=10 (PV dette): 0 -> []
+G-F2 admis session rattrapage (global): 25
+[G-A1 GHOULA] 1 chunk(s)
+  L24: '25/2026.\nÉtudiant : GHOULA SARAH — matricule 232331378602 — n° 23 dans le PV.\nUE C00F0001S : algo 3 = 11.5 ; archi1 = 12.0 ; si1 = 11.33 ; m'
+[G-A1 SAIDANI] 3 chunk(s)
+  L46: '25/2026.\nÉtudiant : SAIDANI TAFATH — matricule 202033020778 — n° 45 dans le PV.\nUE C00F0001S : algo 3 = 7.5 ; archi1 = 9.0 ; si1 = 9.0 ; moy'
+  L376: '25/2026.\nÉtudiant : SAIDANI Mohamed dhiaeddine — matricule 242431370913 — n° 326 dans le PV.\nSemestre 1 : moyenne = 10.03 ; crédits = 30.\nSe'
+  L377: '25/2026.\nÉtudiant : SAIDANI Yahia — matricule 242433098914 — n° 327 dans le PV.\nSemestre 1 : moyenne = 10.18 ; crédits = 30.\nSemestre 2 : mo'
+[G-A2 totaux] 8 chunk(s)
+  L1: "qué en pied de PV : total des étudiants 48, admis 8, n'ayant pas validé 40."
+  L12: "EL — matricule 232332205214 — n° 11 dans le PV.\nUE C00F0001S : algo 3 = 6.0 ; archi1 = 10.0 ; si1 = 9.17 ; moyenne de l'UE = 8.39 ; crédits "
+  L24: "H — matricule 232331378602 — n° 23 dans le PV.\nUE C00F0001S : algo 3 = 11.5 ; archi1 = 12.0 ; si1 = 11.33 ; moyenne de l'UE = 11.61 ; crédit"
+  L50: 'listés dans le PV : 378 (n° 1 à 378).\nRépartition des décisions du jury (comptage automatique des lignes du PV) : Admis(e) avec dettes : 220'
+[G-SR1 GUERGUADJ] 1 chunk(s)
+  L25: '25/2026.\nÉtudiant : GUERGUADJ Mohamed Nazim — matricule N/A — n° 24 dans le PV.\nUE C00F0001S : algo 3 = 11.17 ; archi1 = 4.46 ; si1 = 10.1 ;'
+[G: moyenne UE C00F0001S] 53 chunk(s)
+  L1: 't et matières) :\nUE C00F0001S : algo 3 (algorithmique et structures de), archi1 (architecture des ordinateurs), si1 (introduction aux systèm'
+  L2: "n° 1 dans le PV.\nUE C00F0001S : algo 3 = 8.42 ; archi1 = 6.2 ; si1 = 10.2 ; moyenne de l'UE = 8.27 ; crédits de l'UE = 04.\nUE C00M0001S : a-"
+  L3: "n° 2 dans le PV.\nUE C00F0001S : algo 3 = 10.7 ; archi1 = 10.8 ; si1 = 11.4 ; moyenne de l'UE = 10.97 ; crédits de l'UE = 13.\nUE C00M0001S : "
+  L4: "n° 3 dans le PV.\nUE C00F0001S : algo 3 = 3.5 ; archi1 = 8.25 ; si1 = 10.33 ; moyenne de l'UE = 7.36 ; crédits de l'UE = 04.\nUE C00M0001S : a"
+--- G échantillon L61 ---
+PV de délibération global — Licence 1ère Année — filière Informatique — spécialité informatique — année académique 2025/2026.
+Étudiant : AICHE Rania — matricule 242431747813 — n° 11 dans le PV.
+Semestre 1 : moyenne = 8.18 ; crédits = 14.
+Semestre 2 : moyenne = 10.18 ; crédits = 30.
+Résultat annuel : moyenne = 9.18 ; crédits = 44.
+Décision du jury : Admis(e) avec dettes.
+--- G échantillon L201 ---
+PV de délibération global — Licence 1ère Année — filière Informatique — spécialité informatique — année académique 2025/2026.
+Étudiant : DJELLAB Nassim — matricule 232331633817 — n° 151 dans le PV.
+Semestre 1 : moyenne = 9.8 ; crédits = 19.
+Semestre 2 : moyenne = 8.54 ; crédits = 12.
+Résultat annuel : moyenne = 9.17 ; crédits = 31.
+Décision du jury : Admis(e) avec dettes.
+
+========== FAMILLE H ==========
+Formulaire : University of Science and Technology Houari Boumediene.
+Champs requis : G3, EL NAGGER G1, LAIDOUI G4, G4, BOUALI G2, G2, EL NAGGER G3, BOUALI G4, G1, ELNAGGER G3, Wir Mob Net Security course, Iden Access Manag course, Net security course, cyber security course, Sec Soft Dev course.
+=========================
+Sat
+Sun, 08:00 - 09:30 : G3:TP.C6/Iden Acces -- PW, EL NAGGER G1:TP.C8/cyber secu -- PW, LAIDOUI G4:TP.C4/Wir Mob Ne -- PW, BOUALI, 09:40 - 11:10 : G4:TP.C6/Iden Acces -- PW, EL NAGGER G1:TP.C4/Wir Mob Ne -- PW, BOUALI G2:TP.C8/cyber secu -- PW, LAIDOUI, 11:20 - 12:50 : G2:TP.C6/Iden Acces -- PW, EL NAGGER G3:TP.C5/Wir Mob Ne -- PW, BOUALI G4:TP.C3B/cyber secu -- PW, LAIDOUI, 13:00 - 14:30 : G1:TP126/Iden Acces -- PW, ELNAGGER G3:TP.C7/cyber secu -- PW, LAIDOUI
+Mon, 08:00 - 09:30 : Wir Mob Net Security course :DGUERROUMI, 09:40 - 11:10 : Iden Access Manag course :salle cours2EL NAGGER, 11:20 - 12:50 : G2:TP.C5/Wir Mob Ne -- PW, GUERROUMI, 13:00 - 14:30 : Net security course :SCzeraoulia, 14:40 - 16:10 : Net security course :SCzeraoulia
+Tue, 08:00 - 09:30 : cyber security course :C203LAIDOUI, 09:40 - 11:10 : Iden Access Manag course :SCEL NAGGER, 11:20 - 12:50 : Sec Soft Dev course :D4ABDESSELAM, 13:00 - 14:30 : oper sys secu course :R4
+Wed
+Thu
+University of Science and Technology Houari Boumediene
+Vice-rectorate in charge of the higher education of graduation, the continuing education
+et degrees
+Schedules of : || 4rd year CS.ENG -- Section : A
+College year : 2025/2026 || Semester : || 2 Date : 12/03/2026
+
+========== FAMILLE F échantillons ==========
+--- L1 (1690c) ---
+Préambule / Objet du Arrêté n° 714 :
+REPUBLIQUE ALGERIENNE DEMOCRATIQUE ET POPULAIRE MINISTERE DE L’ENSEIGNEMENT SUPERIEUR ET DE LA RECHERCHE SCIENTIFIQUE
+
+Arrêté n° 714 du 03 novembre 2011 portant modalités de classement des étudiants
+
+Le Ministre de l’Enseignement Supérieur et de la Recherche Scientifique,
+
+- Vu le décret présidentiel n° 10 - 149 du 14 Joumada Ethania 1431 correspondant au 28 Ma
+--- L2 (117c) ---
+Arrêté n° 714 | Article 1° :
+" : Le présent arrêté a pour objet de définir les modalités de classement des étudiants.
+--- L63 (80c) ---
+قرار رقم/99 | المادة 10 :
+: يتم تأمين شهادات التعليم العالي بواسطة تقنيات رقمية.
+--- L75 (146c) ---
+Décret présidentiel n° 21-181 | Art.10 :
+: La sécurisation des diplômes de l’enseignement supérieur est établie à l’aide de techniques numériques.

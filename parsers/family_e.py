@@ -391,6 +391,266 @@ class FamilyEParser(BaseFamilyParser):
         expanded = self._expand_embedded_block(block_text, base_record)
         return expanded if expanded else [base_record]
 
+    # =========================================================================
+    # RÉPARATION DES CELLULES ENTRELACÉES
+    # =========================================================================
+    # Certains PDF de planning (ex. planning_Examens.pdf) dessinent le nom du
+    # module et la salle sur la MÊME ligne, avec des colonnes qui se
+    # chevauchent horizontalement. pdfplumber répartit alors les glyphes par
+    # abscisse : le module est tronqué et la salle hérite de la fin du module
+    # (« Techniques de modélisation et de tra » + « Cite,Dment en
+    # bio-Informatique »), ou la spécialité est coupée par la section
+    # (« Software Eng » + « ineAering »).
+    #
+    # On répare ces rares lignes à partir des « runs » de dessin du PDF
+    # (page.chars, dans l'ordre du flux) : chaque run est un texte logique
+    # complet, ce que l'extraction par tableau ne peut pas reconstituer.
+    _LOWER_WORD_RE = re.compile(r"[a-zà-ÿ]{2,}")
+    _ROOM_TOKEN_RE = re.compile(r"^[A-Z0-9][A-Z0-9 ,.\-]{0,39}$")
+    # Plage horaire d'une ligne de planning. Volontairement sans \b final :
+    # dans le PDF le module est collé à l'heure (« 15H30-17H00Techniques »),
+    # et un \b échouerait entre « 0 » et « T » (deux caractères de mot),
+    # laissant « -17H00 » contaminer le nom du module.
+    _LINE_TIME_RE = re.compile(
+        r"^\s*(?:\d{1,2}\s*[hH:]\s*\d{2}(?::\d{2})?"
+        r"(?:\s*[-–—]\s*\d{1,2}\s*[hH:]\s*\d{2}(?::\d{2})?)?"
+        r"|en\s+ligne)\s*",
+        re.IGNORECASE,
+    )
+    _GENERIC_TITLES = {
+        "",
+        "année",
+        "annee",
+        "semestre2et semestre 1",
+        "planning",
+        "planning examens",
+    }
+
+    @classmethod
+    def _clean_salle(cls, value: str) -> str:
+        """Retire les tirets/points résiduels de fin de cellule de salle."""
+        if not value:
+            return value
+        return re.sub(r"[\s,;.\-\u2013\u2014]+$", "", value).strip()
+
+    @classmethod
+    def _looks_contaminated(cls, record: Dict[str, str]) -> bool:
+        """Détecte une cellule dont le texte a été entrelacé avec une voisine."""
+        section = (record.get("section") or "").strip()
+        if (
+            section
+            and len(section) >= 3
+            and re.fullmatch(r"[A-Za-zÀ-ÿ]+", section)
+            and re.search(r"[a-zà-ÿ]", section)
+        ):
+            return True
+        salle = (record.get("salle") or "").strip()
+        if not salle:
+            return False
+        low = salle.lower()
+        # Salles légitimement décrites avec des mots : « Bibliothèque
+        # Faculté », « En ligne », « BLOC TP C Salles 1.2.3.4.5.6. ».
+        # Sans cette exception, la règle « minuscule + chiffre » casserait
+        # une salle parfaitement valide.
+        if low.startswith(("bibliothèque", "bibliotheque", "en ligne", "bloc ")):
+            return False
+        # Deux textes dessinés l'un sur l'autre : une minuscule collée à une
+        # majuscule dans le même mot (« tiproBci… ») ou une minuscule suivie
+        # d'un chiffre (« c1é6e7sT,135D »).
+        if re.search(r"[a-zà-ÿ][A-Z]|[a-zà-ÿ]\d", salle):
+            return True
+        # Fin d'un mot du module collée au début de la salle :
+        # « Cite,Dment en bio-Informatique ».
+        if re.search(r"[a-zà-ÿ][,;][A-Z]", salle):
+            return True
+        # Lettre isolée en tête : fin d'un mot du module
+        # (« l Bibliothèque Faculté »).
+        if re.fullmatch(r"[a-zà-ÿ] .+", salle):
+            return True
+        return False
+
+    @staticmethod
+    def _page_line_runs(page: Any) -> List[List[Tuple[str, float]]]:
+        """Reconstruit, pour chaque ligne visuelle, les runs de dessin du PDF.
+
+        Retourne une liste de lignes ; chaque ligne est une liste de
+        ``(texte, x0)``. Un run est coupé dès que l'abscisse recule (deux
+        textes distincts se chevauchent) ou que la ligne change.
+        """
+        by_top: Dict[float, List[Dict[str, Any]]] = {}
+        for ch in page.chars:
+            key = round(float(ch["top"]), 1)
+            by_top.setdefault(key, []).append(ch)
+
+        lines: List[List[Tuple[str, float]]] = []
+        for key in sorted(by_top):
+            runs: List[List[Dict[str, Any]]] = []
+            current: List[Dict[str, Any]] = []
+            for ch in by_top[key]:
+                if current and float(ch["x0"]) < float(current[-1]["x1"]) - 1.0:
+                    runs.append(current)
+                    current = [ch]
+                elif current and abs(float(ch["top"]) - float(current[-1]["top"])) > 1.5:
+                    runs.append(current)
+                    current = [ch]
+                else:
+                    current.append(ch)
+            if current:
+                runs.append(current)
+            lines.append(
+                [
+                    ("".join(str(c["text"]) for c in run), float(run[0]["x0"]))
+                    for run in runs
+                ]
+            )
+        return lines
+
+    @classmethod
+    def _is_clean_room(cls, value: str) -> bool:
+        """Vrai si la cellule ressemble à un nom de salle non contaminé."""
+        if not value:
+            return False
+        # Lettre minuscule suivie immédiatement d'une majuscule : glyphes de
+        # deux colonnes entrelacés (« tiproBci... », « avanc1é6e7sT »).
+        if re.search(r"[a-zà-ÿ][A-Z]", value):
+            return False
+        # Lettre isolée en tête : fin d'un mot du module (« l Bibliothèque »).
+        if re.fullmatch(r"[a-zà-ÿ] .+", value):
+            return False
+        return True
+
+    @classmethod
+    def _collect_known_rooms(
+        cls, table: List[List[Optional[str]]], col_map: Dict[str, int]
+    ) -> List[str]:
+        """Salles propres du tableau, utilisées pour recoller un module coupé."""
+        salle_idx = col_map.get("salle")
+        if salle_idx is None:
+            return []
+        rooms = set()
+        for row in table:
+            if not row or salle_idx >= len(row) or not row[salle_idx]:
+                continue
+            candidate = cls._clean_salle(" ".join(str(row[salle_idx]).split()))
+            if cls._is_clean_room(candidate):
+                rooms.add(candidate)
+        return sorted(rooms, key=len, reverse=True)
+
+    def _repair_record_from_runs(
+        self,
+        record: Dict[str, str],
+        line_runs: List[List[Tuple[str, float]]],
+        known_rooms: Optional[List[str]] = None,
+    ) -> Dict[str, str]:
+        """Reconstruit module/salle/spécialité/section d'une ligne entrelacée."""
+        date = (record.get("date") or "").strip()
+        if not date:
+            return record
+        module_cell = (record.get("module") or "").strip()
+        compact_date = re.sub(r"\s+", "", date)
+        module_key = re.sub(r"\s+", "", module_cell)[:12]
+
+        target: Optional[List[Tuple[str, float]]] = None
+        for runs in line_runs:
+            compact = re.sub(r"\s+", "", "".join(t for t, _ in runs))
+            if compact_date not in compact:
+                continue
+            if module_key and module_key not in compact:
+                continue
+            target = sorted(runs, key=lambda r: r[1])
+            break
+        if not target:
+            return record
+
+        main: Optional[Tuple[str, float]] = None
+        for text, x0 in target:
+            if date in text:
+                main = (text, x0)
+                break
+        if not main:
+            return record
+        main_text, main_x = main
+        idx = main_text.find(date)
+        prefix = main_text[:idx].strip()
+        after = main_text[idx + len(date):]
+
+        time_match = self._LINE_TIME_RE.match(after)
+        if time_match:
+            after = after[time_match.end():]
+        suffix = after.strip()
+
+        others = [(t, x) for t, x in target if not (t == main_text and x == main_x)]
+
+        room_run = ""
+        for text, x0 in sorted(others, key=lambda r: r[1], reverse=True):
+            candidate = text.strip()
+            if not candidate or x0 <= main_x + 100:
+                continue
+            if self._ROOM_TOKEN_RE.fullmatch(candidate) or self._is_clean_room(candidate):
+                room_run = candidate
+                break
+
+        section = (record.get("section") or "").strip()
+        specialite = (record.get("specialite") or "").strip()
+        if section and len(section) >= 3 and re.fullmatch(r"[A-Za-zÀ-ÿ]+", section):
+            if re.fullmatch(r"[A-Z0-9]{1,2}", prefix):
+                section = prefix
+            for text, x0 in sorted(others, key=lambda r: r[1]):
+                candidate = text.strip()
+                if (
+                    x0 < main_x
+                    and re.search(r"[a-zà-ÿ]{2,}", candidate)
+                    and not self._ROOM_TOKEN_RE.fullmatch(candidate)
+                ):
+                    specialite = candidate
+                    break
+
+        module = suffix
+        salle = room_run or (record.get("salle") or "").strip()
+        if module_cell and suffix.startswith(module_cell):
+            remainder = suffix[len(module_cell):].strip()
+            if remainder and self._ROOM_TOKEN_RE.fullmatch(remainder):
+                # La salle était collée à la fin du module.
+                module = module_cell
+                salle = remainder
+
+        # Salle collée au module dans un unique run de dessin :
+        # « ... grilles de calculBibliothèque Faculté ».
+        for room in known_rooms or []:
+            if len(room) < 4 or len(module) <= len(room):
+                continue
+            if module.lower().endswith(room.lower()):
+                module = module[: -len(room)].rstrip()
+                if not salle or not self._is_clean_room(salle):
+                    salle = room
+                break
+
+        if not module:
+            return record
+
+        repaired = dict(record)
+        repaired["module"] = module
+        repaired["salle"] = self._clean_salle(salle)
+        repaired["section"] = section
+        repaired["specialite"] = specialite
+        return repaired
+
+    def _repair_record(
+        self,
+        record: Dict[str, str],
+        line_runs: List[List[Tuple[str, float]]],
+        known_rooms: Optional[List[str]] = None,
+    ) -> Dict[str, str]:
+        record = dict(record)
+        record["salle"] = self._clean_salle(record.get("salle", ""))
+        if not self._looks_contaminated(record):
+            return record
+        try:
+            repaired = self._repair_record_from_runs(record, line_runs, known_rooms)
+        except Exception:  # une réparation ne doit jamais casser l'extraction
+            return record
+        return repaired
+
     def parse(
         self, 
         file_path: str, 
@@ -398,10 +658,7 @@ class FamilyEParser(BaseFamilyParser):
         effective_start_line: int = 0
     ) -> List[Chunk]:
         """Parcourt le PDF, extrait les métadonnées d'en-tête et du tableau, et génère des Chunks."""
-        clean_title = document_title if document_title else os.path.basename(file_path)
         chunks: List[Chunk] = []
-        current_exam_lines: List[str] = []
-        current_exam_pages: List[int] = []
 
         # Context global persistant incluant les métadonnées d'en-tête
         ctx: Dict[str, str] = {
@@ -420,9 +677,39 @@ class FamilyEParser(BaseFamilyParser):
 
         try:
             with pdfplumber.open(file_path) as pdf:
+                clean_title = self._resolve_document_title(
+                    document_title, pdf
+                )
+
+                # Chaque entrée en attente est (page, contexte figé, phrase).
+                # Le contexte est figé AU MOMENT de la ligne : sans cela, un
+                # chunk cumulant plusieurs sections (A puis B) recevait les
+                # métadonnées de la DERNIÈRE ligne (section B) alors que son
+                # texte commençait par la section A (C7).
+                pending: List[Tuple[int, Dict[str, str], str]] = []
+                current_key: Optional[Tuple[Any, ...]] = None
+
+                def flush() -> None:
+                    nonlocal pending, current_key
+                    if not pending:
+                        return
+                    page_num = pending[0][0]
+                    snapshot = pending[-1][1]
+                    chunks.append(
+                        self._build_chunk(
+                            [p[2] for p in pending],
+                            page_num,
+                            snapshot,
+                            clean_title,
+                        )
+                    )
+                    pending = []
+                    current_key = None
+
                 for page_idx, page in enumerate(pdf.pages):
                     if self.config.reset_ctx_per_page:
                         ctx = {k: "" for k in ctx}
+                        last_col_map = {}
 
                     # 1. Extraction et mise à jour des métadonnées d'en-tête de la page
                     page_text = page.extract_text() or ""
@@ -437,6 +724,19 @@ class FamilyEParser(BaseFamilyParser):
                     for meta_key, meta_val in header_meta.items():
                         if meta_val:
                             ctx[meta_key] = meta_val
+
+                    # Niveau absent de la colonne « Année » (M2, ING1
+                    # rattrapage) : on le lit dans le titre du planning.
+                    if page_idx == 0 and not ctx.get("annee"):
+                        level, level_spec = self._infer_level(page_text)
+                        if level:
+                            ctx["annee"] = level
+                        if level_spec and not ctx.get("specialite"):
+                            ctx["specialite"] = level_spec
+
+                    # Runs de dessin : nécessaires seulement pour réparer les
+                    # cellules entrelacées, mais peu coûteux à construire.
+                    line_runs = self._page_line_runs(page)
 
                     # 2. Traitement des tableaux
                     tables = page.extract_tables() or []
@@ -454,6 +754,7 @@ class FamilyEParser(BaseFamilyParser):
                             col_map = last_col_map
                             header_idx = None
 
+                        known_rooms = self._collect_known_rooms(table, col_map)
                         last_row_date = ""
                         last_row_horaire = ""
 
@@ -472,6 +773,8 @@ class FamilyEParser(BaseFamilyParser):
                             records = self._extract_records(row, col_map)
 
                             for record in records:
+                                record = self._repair_record(record, line_runs, known_rooms)
+
                                 # Propagation si Date/Horaire est fusionnée avec la ligne précédente (rowspan)
                                 if not record.get("date") and last_row_date and record.get("module"):
                                     record["date"] = last_row_date
@@ -551,32 +854,92 @@ class FamilyEParser(BaseFamilyParser):
                                     f", le {date_exam}{horaire_str}{salle_str}."
                                 )
 
-                                current_exam_lines.append(sentence)
-                                current_exam_pages.append(page_idx + 1)
+                                # Le contexte est figé pour CETTE ligne.
+                                snapshot = dict(ctx)
 
-                                if len(current_exam_lines) >= self.config.batch_size_examens:
-                                    chunk_page = current_exam_pages[0] if current_exam_pages else page_idx + 1
-                                    chunks.append(
-                                        self._build_chunk(
-                                            current_exam_lines, chunk_page, ctx, clean_title
-                                        )
-                                    )
-                                    current_exam_lines = []
-                                    current_exam_pages = []
+                                # Un chunk ne mélange ni deux pages ni deux
+                                # parcours/sections : la page rendue est exacte
+                                # (la page 7 du planning normal existait mais
+                                # était étiquetée page 6) et les métadonnées
+                                # décrivent bien toutes les lignes du chunk.
+                                group_key = (
+                                    page_idx + 1,
+                                    snapshot.get("annee", ""),
+                                    snapshot.get("specialite", ""),
+                                    snapshot.get("section", ""),
+                                    snapshot.get("semestre", ""),
+                                    snapshot.get("session", ""),
+                                    snapshot.get("type_examen", ""),
+                                    snapshot.get("annee_universitaire", ""),
+                                )
+                                if pending and (
+                                    group_key != current_key
+                                    or len(pending) >= self.config.batch_size_examens
+                                ):
+                                    flush()
 
-                if current_exam_lines:
-                    chunk_page = current_exam_pages[0] if current_exam_pages else len(pdf.pages)
-                    chunks.append(
-                        self._build_chunk(
-                            current_exam_lines, chunk_page, ctx, clean_title
-                        )
-                    )
+                                pending.append((page_idx + 1, snapshot, sentence))
+                                current_key = group_key
+
+                flush()
 
         except Exception as e:
             logger.error(f"Erreur d'extraction sémantique E sur {file_path}: {e}", exc_info=True)
             chunks = []
 
         return chunks if chunks else FallbackParser.parse_safe(file_path, "E")
+
+    # Niveau explicite dans le titre ou la première ligne de données.
+    _LEVEL_RE = re.compile(r"\b(ING[1-5]|L[1-3]|M[12])\b")
+    _LEVEL_SPEC_RE = re.compile(
+        r"\b(ING[1-5]|L[1-3]|M[12])\s+([A-Z][A-Za-z0-9_.\-]{1,20})\b"
+    )
+
+    @classmethod
+    def _infer_level(cls, page_text: str) -> Tuple[str, str]:
+        """Déduit le niveau (et si possible la spécialité) du titre du planning.
+
+        Certains PDF n'ont pas de colonne « Année » remplie (M2 rattrapage
+        2025/2026, ING1 rattrapage 2024/2025) : sans cette déduction, le chunk
+        ne dit pas de quel niveau il parle (E4).
+        """
+        for line in (page_text or "").split("\n")[:10]:
+            line = " ".join(line.split())
+            match = cls._LEVEL_SPEC_RE.search(line)
+            if match:
+                return match.group(1), match.group(2)
+            match = cls._LEVEL_RE.search(line)
+            if match:
+                return match.group(1), ""
+        return "", ""
+
+    @classmethod
+    def _resolve_document_title(
+        cls,
+        document_title: Optional[str],
+        pdf: Any,
+    ) -> str:
+        """Choisit un document_name descriptif.
+
+        Les métadonnées PDF de certains fichiers USTHB ne contiennent qu'un
+        fragment d'en-tête de colonne (« Année ») ou de sous-titre
+        (« Semestre2et Semestre 1 »). On privilégie alors le titre réel du
+        planning lu sur la première page.
+        """
+        title = (document_title or "").strip()
+        try:
+            first_text = pdf.pages[0].extract_text() or ""
+        except Exception:
+            first_text = ""
+
+        for line in first_text.split("\n")[:10]:
+            line = " ".join(line.split())
+            if re.match(r"^Plan(?:n)?ing\b", line, re.IGNORECASE):
+                return line
+
+        if title.lower() in cls._GENERIC_TITLES:
+            return title
+        return title or "Planning d'examens"
 
     def _build_chunk(
         self, lines: List[str], page_num: int, ctx: Dict[str, str], document_title: str
@@ -598,6 +961,7 @@ class FamilyEParser(BaseFamilyParser):
             annee=ctx.get("annee", ""),
             specialite=ctx.get("specialite", ""),
             section=ctx.get("section", ""),
+            niveau=ctx.get("annee", "") or None,
         )
 
         return Chunk(text=content, metadata=metadata)

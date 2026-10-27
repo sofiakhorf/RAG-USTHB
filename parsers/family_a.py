@@ -1,8 +1,5 @@
 import os
 import re
-import shutil
-import subprocess
-import tempfile
 import logging
 from typing import List, Optional, Tuple
 
@@ -17,6 +14,7 @@ except ImportError:
     PdfReader = None
 
 from core import Chunk, ChunkMetadata, BaseFamilyParser, ParserRegistry
+from core.utils import SystemUtils
 from parsers.fallback import FallbackParser
 
 logger = logging.getLogger(__name__)
@@ -26,6 +24,17 @@ _FILLER_RUN_RE = re.compile(r'[.\u2026_]{4,}')
 _CHECKBOX_RE = re.compile(r'[\u2610\u2611\u2612\u25a2\u25a1]')
 _HTML_TAG_RE = re.compile(r'<[^>]+>')
 
+# Noms de champs générés automatiquement par les éditeurs de formulaires
+# AcroForm ("Liste déroulante4", "Texte7", "Case à cocher2"...). Ils ne
+# décrivent pas une donnée métier : on conserve la valeur saisie mais on ne
+# les présente pas comme des « champs requis » du formulaire.
+_GENERIC_FORM_FIELD_RE = re.compile(
+    r'^(?:Liste\s+d[ée]roulante|Zone\s+de\s+texte|Case\s+[àa]\s+cocher|'
+    r'Bouton|Champ|Texte|Text|Check\s*Box|Combo\s*Box|Dropdown|Text\s*Field)'
+    r'\s*\d*$',
+    re.IGNORECASE,
+)
+
 # Marqueur (zone d'usage privé Unicode, ne peut jamais apparaître dans un
 # texte réel) préfixé aux lignes déjà "aplaties sémantiquement" par
 # _classify_and_flatten_table (voir plus bas). Ces lignes sont déjà des
@@ -34,6 +43,20 @@ _HTML_TAG_RE = re.compile(r'<[^>]+>')
 # réinterprète les ":" et "," comme de nouveaux délimiteurs de champ). Le
 # marqueur permet à parse() de les reconnaître et de les laisser intactes.
 _SEMANTIC_MARK = '\uE000'
+
+# Titre du formulaire lui-même (« DOCUMENT DESCRIPTIF ANNEXE AU DIPLOME
+# MASTER »). Le routeur le classe comme en-tête (pattern
+# `fr_document_descriptif_diplome`) car il sert au routage, mais pour la
+# famille A c'est le titre réel du document : il doit rester dans le chunk.
+_FORM_TITLE_RE = re.compile(
+    r"DOCUMENT\s+DESCRIPTI(?:F|VE)\b.*\bDIPLOME", re.IGNORECASE
+)
+
+# Ligne d'adresse du destinataire (« A Monsieur le responsable de
+# l'entreprise ») : le routeur la classe comme en-tête de politesse, mais pour
+# un formulaire de demande de stage c'est une information de contenu (à qui
+# s'adresse la demande). On arrête la coupe d'en-tête sur cette ligne.
+_ADDRESSEE_RE = re.compile(r"^\s*[ÀA]\s+(?:Monsieur|Madame)\b", re.IGNORECASE)
 
 
 def _dedupe_consecutive(items: List[str]) -> List[str]:
@@ -224,12 +247,22 @@ def _classify_and_flatten_table(rows: List[List[str]]) -> List[str]:
             continue
 
         pairs = []
+        prev_value = None
         for idx, cell in enumerate(row):
             cell = _clean_line(cell)
             if not cell:
                 continue
+            if prev_value is not None and cell == prev_value:
+                # Cellule fusionnée horizontalement (gridSpan) : python-docx
+                # répète son texte sur chaque position de grille qu'elle
+                # couvre. Sans ce filtre, la cellule "U.E.F1.1" fusionnée sur
+                # deux colonnes était appariée à DEUX en-têtes différents :
+                # "Code : U.E.F1.1, Intitulé de l'UE : U.E.F1.1, Intitulé de
+                # l'UE : ALGORITHMIQUE..." (cellule dupliquée, cf. A5).
+                continue
             head = _clean_line(header[idx]) if idx < len(header) else ""
             pairs.append((head, cell))
+            prev_value = cell
 
         pairs = _dedupe_row_units(pairs)
         if pairs:
@@ -261,6 +294,58 @@ def _dedupe_row_units(pairs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
     return out
 
 
+def _looks_like_parenthetical_continuation(text: str) -> bool:
+    """
+    Vrai pour une ligne qui n'est que la fin d'un libellé entre parenthèses,
+    ex. « (USTHB) : » placé sous « VISA DU DOYEN DE LA FACULTE PROMOTEUR : ».
+
+    Ce n'est pas une valeur : sans ce test, le parser produisait
+    « VISA DU DOYEN DE LA FACULTE PROMOTEUR : [ (USTHB) : ] » (A1/A7).
+    """
+    return bool(
+        re.fullmatch(r"\(\s*[A-Za-zÀ-ÿ0-9.\- ]{1,40}\s*\)\s*[:?]", _clean_line(text))
+    )
+
+
+def _looks_like_section_heading(text: str) -> bool:
+    """
+    Vrai si la ligne est un titre de section (« 1. Informations personnelles »,
+    « [ 2. Bilan scientifique ] », « 3. Travaux réalisés… »).
+
+    Sert de garde-fou avant de rattacher la ligne suivante comme valeur d'un
+    champ vide : sans cela, « Intitulé : » suivi de « 2. Bilan scientifique »
+    produisait « Intitulé : [ 2. Bilan scientifique ] » — le titre de section
+    devenait la valeur du champ (A7) et disparaissait en tant que titre.
+    """
+    clean = _clean_line(text)
+    if not clean:
+        return False
+    # Titre entre crochets : "[ 1. Informations personnelles ]"
+    if re.fullmatch(r'\[\s*[^\]]+\s*\]', clean):
+        return True
+    # Titre numéroté : "1. Informations personnelles", "3-2 Résultats obtenus"
+    return bool(re.match(r'^\d+(?:[.\-]\d+)*[.)]?\s+\S', clean))
+
+
+def _looks_like_label_line(text: str) -> bool:
+    """
+    Vrai si la ligne ressemble elle-même à un champ de formulaire
+    ("Prénom :", "Date de retour :", "Qualité du signataire ?").
+
+    Sert de garde-fou avant de « consommer » la ligne suivante comme valeur
+    du champ courant : sans ce test, une ligne "Nom :" suivie de "Prénom :"
+    produisait "Nom : [ Prénom : ]" — le second champ disparaissait en tant
+    que champ et devenait la valeur du premier (A6 : champs fusionnés).
+    """
+    clean = _clean_line(text)
+    if not clean:
+        return False
+    match = re.match(r'^([^:?|]{1,60}?)\s*[:?]', clean)
+    if not match:
+        return False
+    return _is_valid_label(match.group(1))
+
+
 def _is_valid_label(label: str) -> bool:
     """
     Vérifie si une chaîne est un nom de champ/label valide.
@@ -287,6 +372,13 @@ def _is_valid_label(label: str) -> bool:
         "accusé de réception", "prends connaissance", "n'ouvre plus droit"
     ]
     if any(kw in lower for kw in attestation_keywords):
+        return False
+
+    # Fragment de parenthèse : la liste des libellés est découpée sur les
+    # virgules, donc "Enseignements (Cours, TD, TP)" produit des fragments
+    # "TD" et "TP)" — une parenthèse fermante orpheline trahit le fragment,
+    # pas un vrai libellé de champ.
+    if clean.count(')') > clean.count('('):
         return False
 
     return True
@@ -385,7 +477,7 @@ class FamilyAParser(BaseFamilyParser):
                 return []
 
         if effective_start_line > 0 and effective_start_line < len(raw_lines):
-            raw_lines = raw_lines[effective_start_line:]
+            raw_lines = raw_lines[self._safe_header_cut(raw_lines, effective_start_line):]
 
         # Fusion des blocs multi-lignes
         raw_lines = self._merge_multiline_blocks(raw_lines)
@@ -443,24 +535,118 @@ class FamilyAParser(BaseFamilyParser):
         clean_labels = []
         for l in labels:
             lbl = l.strip()
+            if _GENERIC_FORM_FIELD_RE.match(lbl) or lbl.lower().startswith("champ de formulaire"):
+                continue
             if _is_valid_label(lbl) and lbl not in clean_labels:
                 clean_labels.append(lbl)
         clean_labels = clean_labels[:15]
 
-        header = f"Formulaire : {clean_title}.\nChamps requis : {', '.join(clean_labels) if clean_labels else 'Procédure'}.\n=========================\n"
+        header_title = clean_title.rstrip(" .;:") or clean_title
+        header = f"Formulaire : {header_title}.\nChamps requis : {', '.join(clean_labels) if clean_labels else 'Procédure'}.\n=========================\n"
+
+        parts = self._split_long_body(raw_text)
+        if len(parts) <= 1:
+            return [Chunk(
+                text=header + raw_text,
+                metadata=ChunkMetadata(
+                    document_name=clean_title,
+                    family_type="A",
+                    procedure=clean_title.lower()
+                )
+            )]
 
         return [Chunk(
-            text=header + raw_text,
+            text=header + part,
             metadata=ChunkMetadata(
                 document_name=clean_title,
                 family_type="A",
                 procedure=clean_title.lower()
             )
-        )]
+        ) for part in parts]
+
+    # Taille maximale visée pour un chunk de formulaire. Le barème d'audit
+    # considère un chunk de plus de 6000 caractères comme aberrant (C5) ;
+    # l'annexe descriptive au diplôme (APCI) fait ~8500 caractères et doit
+    # donc être scindée.
+    MAX_CHUNK_CHARS = 4500
+
+    # Début de section numérotée ("2. INFORMATIONS...", "3-2 Résultats...").
+    _SECTION_HEADING_RE = re.compile(r'^\d+(?:[.\-]\d+)*[.)]?\s+[A-ZÀ-Ý]')
+
+    def _split_long_body(self, body: str) -> List[str]:
+        """
+        Scinde un formulaire trop long en plusieurs blocs, aux frontières de
+        lignes uniquement (jamais au milieu d'une ligne de tableau).
+
+        Une ligne de titre de section est un point de coupe privilégié dès
+        qu'au moins la moitié du budget est déjà consommée : les sections
+        logiques (« 3-2 Résultats obtenus », « 4- PROJECTIONS... ») restent
+        ainsi entières plutôt que d'être coupées au hasard.
+        """
+        if len(body) <= self.MAX_CHUNK_CHARS:
+            return [body]
+
+        budget = self.MAX_CHUNK_CHARS
+        parts: List[str] = []
+        buffer: List[str] = []
+        size = 0
+
+        def flush():
+            nonlocal buffer, size
+            text = "\n".join(buffer).strip()
+            if text:
+                parts.append(text)
+            buffer, size = [], 0
+
+        for line in body.split("\n"):
+            line_len = len(line) + 1
+            if buffer:
+                too_long = size + line_len > budget
+                section_break = (
+                    size >= budget // 2 and self._SECTION_HEADING_RE.match(line)
+                )
+                if too_long or section_break:
+                    flush()
+            buffer.append(line)
+            size += line_len
+        flush()
+
+        return parts or [body]
 
     # =========================================================================
     # EXTRACTION BRUTE
     # =========================================================================
+
+    @staticmethod
+    def _safe_header_cut(lines: List[str], requested: int) -> int:
+        """
+        Réduit si nécessaire l'index de démarrage fourni par le routeur.
+
+        Le routeur compte ses lignes sur sa PROPRE extraction (paragraphes +
+        une entrée par cellule de tableau), alors que ce parser aplatit
+        chaque tableau en UNE ligne. Les deux index ne coïncident donc pas :
+        sur « AnnMasAPCI.doc », le routeur renvoyait 4 alors que le parser
+        n'a qu'une seule ligne d'en-tête institutionnel, si bien que le titre
+        du document, son paragraphe d'introduction et le titre de section
+        « 1. LE TITULAIRE DU DIPLOME » étaient supprimés (perte de contenu,
+        C4). On ne coupe donc jamais au-delà du dernier en-tête institutionnel
+        réellement présent dans NOS lignes.
+        """
+        if requested <= 0:
+            return 0
+
+        from pipeline.router import DocumentRouter  # import local (pas de cycle)
+
+        i = 0
+        while (
+            i < len(lines)
+            and i < requested
+            and DocumentRouter._is_header_line(lines[i])
+            and not _FORM_TITLE_RE.search(lines[i])
+            and not _ADDRESSEE_RE.match(lines[i])
+        ):
+            i += 1
+        return min(requested, i)
 
     def _extract_raw_lines(self, file_path: str, ext: str) -> List[str]:
         if ext == '.docx':
@@ -472,49 +658,26 @@ class FamilyAParser(BaseFamilyParser):
             # de le convertir nous-mêmes plutôt que d'essayer de le lire
             # comme un PDF (ce qui échoue toujours et produit une erreur
             # confuse, sans rapport avec la cause réelle).
+            # Le .docx produit est mis en cache par SystemUtils : il ne faut
+            # surtout PAS le supprimer ici (il serait reconstruit à chaque
+            # exécution) et il n'est jamais écrit dans le dossier source.
             converted_path = self._convert_legacy_word_to_docx(file_path)
-            try:
-                return self._extract_from_docx(converted_path)
-            finally:
-                shutil.rmtree(os.path.dirname(converted_path), ignore_errors=True)
+            return self._extract_from_docx(converted_path)
         else:
             return self._extract_from_pdf(file_path)
 
-    def _convert_legacy_word_to_docx(self, file_path: str, timeout: int = 90) -> str:
+    def _convert_legacy_word_to_docx(self, file_path: str, timeout: int = 180) -> str:
         """
         Convertit un .doc/.dot/.rtf binaire en .docx via LibreOffice headless.
-        Lève une exception explicite et actionnable (plutôt qu'un échec
-        pdfplumber confus) si LibreOffice est absent ou si la conversion
-        échoue — l'appelant (parse()) délègue alors au FallbackParser.
+
+        Délègue à `SystemUtils.convert_doc_to_docx` : résolution de
+        l'exécutable (PATH puis emplacements d'installation standard),
+        cache persistant hors de `data/` et second essai en cas de
+        dépassement de délai. Lève une exception explicitement actionnable
+        si la conversion échoue — l'appelant (parse()) délègue alors au
+        FallbackParser.
         """
-        if shutil.which("soffice") is None:
-            raise RuntimeError(
-                f"soffice (LibreOffice) introuvable dans le PATH : impossible de convertir {file_path} "
-                "en .docx. Installez LibreOffice sur cette machine, ou assurez-vous que la conversion "
-                "externe du pipeline fonctionne réellement pour ce fichier."
-            )
-
-        out_dir = tempfile.mkdtemp(prefix="family_a_docconv_")
-        try:
-            result = subprocess.run(
-                ["soffice", "--headless", "--norestore", "--convert-to", "docx", "--outdir", out_dir, file_path],
-                capture_output=True, text=True, timeout=timeout
-            )
-        except subprocess.TimeoutExpired as exc:
-            shutil.rmtree(out_dir, ignore_errors=True)
-            raise RuntimeError(f"Conversion LibreOffice de {file_path} expirée après {timeout}s") from exc
-
-        base = os.path.basename(file_path).rsplit(".", 1)[0]
-        converted_path = os.path.join(out_dir, base + ".docx")
-
-        if result.returncode != 0 or not os.path.exists(converted_path):
-            shutil.rmtree(out_dir, ignore_errors=True)
-            raise RuntimeError(
-                f"Conversion LibreOffice de {file_path} échouée (code {result.returncode}): "
-                f"{result.stderr.strip()}"
-            )
-
-        return converted_path
+        return SystemUtils.convert_doc_to_docx(file_path, self.config, timeout=timeout)
 
     def _extract_from_docx(self, file_path: str) -> List[str]:
         raw_lines = []
@@ -660,7 +823,15 @@ class FamilyAParser(BaseFamilyParser):
             value = _clean_line(str(value))
             if not value:
                 continue
-            lines.append(f"{_clean_line(str(name))} : {value}")
+            clean_name = _clean_line(str(name))
+            if _GENERIC_FORM_FIELD_RE.match(clean_name):
+                # Nom technique non descriptif : la valeur reste restituée
+                # (elle n'apparaît nulle part ailleurs dans le texte de la
+                # page), mais présentée comme une valeur de champ interactif
+                # et non comme un libellé métier.
+                lines.append(f"Champ de formulaire « {clean_name} » : {value}")
+            else:
+                lines.append(f"{clean_name} : {value}")
         return lines
 
     # =========================================================================
@@ -752,6 +923,10 @@ class FamilyAParser(BaseFamilyParser):
         # Normalisation des cases à cocher et des pointillés
         segment = _CHECKBOX_RE.sub('[ ]', segment)
         segment = _FILLER_RUN_RE.sub(' ____ ', segment)
+        # Plusieurs zones de remplissage consécutives dans une même cellule
+        # ("Motif : ……… ……… ………") ne portent qu'une seule information :
+        # une seule marque de remplissage suffit et évite le bruit C6.
+        segment = re.sub(r'(?:____\s*){2,}', '____ ', segment)
         segment = _clean_line(segment)
 
         if not segment:
@@ -803,10 +978,20 @@ class FamilyAParser(BaseFamilyParser):
             if not trailing_val and next_line:
                 clean_next = _clean_line(next_line)
                 clean_next = _FILLER_RUN_RE.sub(' ____ ', clean_next)
+                if _looks_like_parenthetical_continuation(clean_next):
+                    # Fin d'un libellé sur la ligne suivante : on la recolle
+                    # au libellé, jamais présentée comme une valeur de champ.
+                    current_label = (
+                        f"{current_label} {clean_next.rstrip().rstrip(':').strip()}"
+                    )
+                    consumed_next = True
+                    clean_next = ""
                 is_fillerish = bool(re.fullmatch(r'[.\u2026_\s\[\]]{3,}', clean_next)) or clean_next == '____'
                 is_short_value = len(clean_next.split()) <= 3
                 is_option_list = _looks_like_option_list(clean_next)
-                if clean_next and (is_fillerish or is_short_value or is_option_list):
+                is_next_label = _looks_like_label_line(clean_next)
+                is_section_heading = _looks_like_section_heading(clean_next)
+                if clean_next and not is_next_label and not is_section_heading and (is_fillerish or is_short_value or is_option_list):
                     # Une liste d'options est déjà une valeur "lisible" en
                     # tant que telle (surtout si elle porte ses propres
                     # marqueurs "[ ]" de cases à cocher) : l'envelopper à
@@ -836,7 +1021,9 @@ class FamilyAParser(BaseFamilyParser):
                 is_fillerish = bool(re.fullmatch(r'[.\u2026_\s\[\]]{3,}', clean_next)) or clean_next == '____'
                 is_short_value = len(clean_next.split()) <= 3
                 is_option_list = _looks_like_option_list(clean_next)
-                if clean_next and (is_fillerish or is_short_value or is_option_list):
+                is_next_label = _looks_like_label_line(clean_next)
+                is_section_heading = _looks_like_section_heading(clean_next)
+                if clean_next and not is_next_label and not is_section_heading and (is_fillerish or is_short_value or is_option_list):
                     return f"{segment} {clean_next}", True
             return segment, False
 
@@ -847,4 +1034,9 @@ class FamilyAParser(BaseFamilyParser):
             else:
                 reconstructed_parts.append(f"{lbl} {dlm}")
 
-        return " || ".join(reconstructed_parts), consumed_next
+        result = " || ".join(reconstructed_parts)
+        # Double séparateur dans la source (« Promoteur 2 : :…… ») : on ne
+        # conserve qu'un seul « : », sinon le champ paraît avoir pour valeur
+        # un second séparateur (A1). N'affecte pas les heures « 08:30:00 ».
+        result = re.sub(r':\s*:\s*', ': ', result)
+        return result, consumed_next
