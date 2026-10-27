@@ -110,6 +110,17 @@ export function RagLanding({ onNavigate }) {
             </span>
           </a>
 
+          <nav aria-label="التنقل الرئيسي" className="hidden items-center justify-center gap-8 lg:flex">
+            {navigationLinks.map(({ href, label }) => (
+              <a
+                key={href}
+                href={href}
+                className="rounded-lg px-1 py-2 text-sm font-semibold text-muted-foreground/75 transition hover:text-link focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
 
           <div className="hidden items-center justify-self-end gap-2.5 lg:flex">
             <RagThemeToggle />

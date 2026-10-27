@@ -1,6 +1,6 @@
 import './globals.css'
 import { cookies } from 'next/headers'
-import { Inter, Noto_Sans_Arabic } from 'next/font/google'
+import { Noto_Sans_Arabic } from 'next/font/google'
 import { RagThemeProvider } from './rag-theme-provider'
 
 const arabicFont = Noto_Sans_Arabic({
@@ -9,15 +9,9 @@ const arabicFont = Noto_Sans_Arabic({
   variable: '--font-arabic',
 })
 
-const interFont = Inter({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-sans',
-})
-
 export const metadata = {
-title: 'RAG-USTHB | Smart Academic AI Assistant',
-  description: 'An AI-powered academic platform for USTHB students to search lectures, exam archives, and official syllabi with multi-language support.',
+  title: 'RAG-USTHB | مساعدك الأكاديمي الذكي',
+  description: 'منصة عربية لطلاب جامعة العلوم والتكنولوجيا هواري بومدين، تساعد على البحث في المحاضرات وأرشيف الامتحانات والمناهج الرسمية.',
 }
 
 export const viewport = {
@@ -34,12 +28,9 @@ export default async function RootLayout({ children }) {
   const cookieStore = await cookies()
   const initialTheme = cookieStore.get('rag-theme')?.value === 'dark' ? 'dark' : 'light'
 
-  const currentLang = cookieStore.get('rag-lang')?.value || 'en'
-  const isRtl = currentLang === 'ar'
-  
   return (
-  <html lang={currentLang} dir={isRtl ? 'rtl' : 'ltr'} className={initialTheme === 'dark' ? 'dark' : undefined}>
-      <body className={`${interFont.variable} ${arabicFont.variable} min-h-dvh bg-background text-foreground antialiased font-sans`}>
+    <html lang="ar" dir="rtl" className={initialTheme === 'dark' ? 'dark' : undefined}>
+      <body className={`${arabicFont.variable} min-h-dvh bg-background text-foreground antialiased`}>
         <RagThemeProvider initialTheme={initialTheme}>{children}</RagThemeProvider>
       </body>
     </html>

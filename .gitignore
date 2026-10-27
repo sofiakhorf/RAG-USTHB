@@ -1,40 +1,51 @@
-# Ignorer tout le contenu du dossier data
+# --- Base de données et fichiers de données ---
 data/*
-
-# Conserver le dossier data dans Git grâce à ce fichier
 !data/.gitkeep
 
-# Ignorer les fichiers de logs
-*.log
-
-
-
-# Base de données vectorielle / Index
+# Base de données vectorielle / Index RAG
 chroma_db/
 faiss_index/
 vectorstore/
 *.db
 
-# Configuration et clés d'API
+# SQLite local (Développement)
+backend/db.sqlite3
+backend/staticfiles/
+*.sqlite3
+
+# --- Configuration, Environnement et Clés API ---
 .env
+.env*
 .venv/
+.vercel
 
+# --- Dépendances (Node.js & Python) ---
+/node_modules
+check_deps.py
 
-# Cache Python
+# --- Cache et Fichiers temporaires de Build ---
 __pycache__/
 *.pyc
-
-# Checkpoints Jupyter / VS Code
 .ipynb_checkpoints/
+/.next/
+/out/
+/build
+*.tsbuildinfo
+next-env.d.ts
 
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-
-# Fichiers d'audit et de rapports temporaires
+# --- Fichiers d'audit, Prompts et Rapports temporaires ---
 audit/
 prompts/
-check_deps.py
 chunks_output.jsonl
 fichierVerif/
+Chunks_family/
 scratch/
 scripts_amelioration_chunking/
 
