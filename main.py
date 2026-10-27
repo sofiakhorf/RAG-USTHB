@@ -17,8 +17,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger("RAG_Main")
 
+# Familles pris en charge pour les étudiants
+FAMILIES_TO_PROCESS = ["A", "B", "C-D", "E", "G", "H"]
+
 # Ajout des extensions Excel (.xlsx, .xls)
 VALID_EXTENSIONS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".vsdx", ".drawio", ".png", ".xlsx", ".xls"}
+
+
+def get_family_input_dirs(base_input_dir: Path):
+    """Retourne les dossiers de données par famille dans le format data/famille XXX."""
+    family_dirs = []
+    for family in FAMILIES_TO_PROCESS:
+        family_dir = base_input_dir / f"famille {family}"
+        if family_dir.exists() and family_dir.is_dir():
+            family_dirs.append((family, family_dir))
+        else:
+            logger.warning(f"Dossier introuvable pour la famille {family}: {family_dir}")
+    return family_dirs
 
 def display_chunks_summary(chunks: list, full_text: bool = False):
     """Affiche un résumé propre des chunks dans le terminal."""
@@ -56,58 +71,66 @@ def display_chunks_summary(chunks: list, full_text: bool = False):
 def main():
     # 1. Arguments
     parser = argparse.ArgumentParser(description="Pipeline d'ingestion RAG USTHB")
-    parser.add_argument("--input-dir", type=str, default="data", help="Dossier contenant les documents")
-    parser.add_argument("--output-file", type=str, default="chunks_output.jsonl", help="Fichier JSONL de sortie")
-    
+    parser.add_argument("--input-dir", type=str, default="data", help="Dossier racine contenant les dossiers data/famille XXX")
+    parser.add_argument("--output-dir", type=str, default="Chunks_family", help="Dossier principal de sortie des chunks par famille")
+
     # --- NOUVEL ARGUMENT POUR LE DÉBOGAGE ---
     parser.add_argument("--full-text", action="store_true", help="Mode test : Affiche l'intégralité du texte extrait pour chaque chunk")
-    
+
     parser.add_argument("--quiet", action="store_true", help="Désactive l'affichage détaillé dans la console")
     args = parser.parse_args()
 
     input_path = Path(args.input_dir)
-    output_path = Path(args.output_file)
-    
+    output_root = Path(args.output_dir)
+
     # 2. Validation des entrées
     if not input_path.exists():
         logger.error(f"Le dossier '{input_path.resolve()}' n'existe pas.")
         sys.exit(1)
 
-    # 3. Découverte des fichiers
-    files = [str(f) for f in input_path.rglob("*") if f.is_file() and f.suffix.lower() in VALID_EXTENSIONS]
-
-    if not files:
-        logger.warning(f"Aucun fichier compatible trouvé dans : {input_path.resolve()}")
+    family_dirs = get_family_input_dirs(input_path)
+    if not family_dirs:
+        logger.warning(f"Aucune famille disponible dans : {input_path.resolve()} (recherche des dossiers 'famille A', 'famille B', 'famille C-D', 'famille E', 'famille G', 'famille H')")
         sys.exit(0)
 
-    logger.info(f"{len(files)} fichier(s) détecté(s). Démarrage du traitement...")
+    output_root.mkdir(parents=True, exist_ok=True)
 
-    # 4. Exécution du Pipeline (avec gestion d'erreurs)
-    config = PipelineConfig()
-    processor = BatchDocumentProcessor(config=config)
-    
-    try:
-        chunks = processor.process_batch(files)
-    except Exception as e:
-        logger.error(f"Une erreur critique est survenue pendant le traitement batch : {e}", exc_info=True)
-        sys.exit(1)
+    for family, family_dir in family_dirs:
+        files = [str(f) for f in family_dir.rglob("*") if f.is_file() and f.suffix.lower() in VALID_EXTENSIONS]
 
-    # 5. Affichage optionnel (si pas en mode --quiet)
-    if not args.quiet and chunks:
-        # On passe le flag full_text à la fonction d'affichage
-        display_chunks_summary(chunks, full_text=args.full_text)
+        if not files:
+            logger.warning(f"Aucun fichier compatible trouvé dans : {family_dir.resolve()}")
+            continue
 
-    # 6. Exportation JSONL (Streaming pour optimiser la mémoire)
-    try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            for chunk in chunks:
-                chunk_json = json.dumps(chunk.model_dump(), ensure_ascii=False)
-                f.write(chunk_json + "\n")
-                
-        logger.info(f"Succès ! {len(chunks)} chunks exportés (format JSONL) dans '{output_path.resolve()}'.")
-    except IOError as e:
-        logger.error(f"Impossible d'écrire le fichier de sortie '{output_path}' : {e}")
-        sys.exit(1)
+        logger.info(f"{family} : {len(files)} fichier(s) détecté(s). Démarrage du traitement...")
+
+        # 4. Exécution du Pipeline (avec gestion d'erreurs)
+        config = PipelineConfig(max_workers=settings.MAX_WORKERS)
+        processor = BatchDocumentProcessor(config=config)
+
+        try:
+            chunks = processor.process_batch(files)
+        except Exception as e:
+            logger.error(f"Une erreur critique est survenue pendant le traitement batch pour la famille {family} : {e}", exc_info=True)
+            continue
+
+        # 5. Affichage optionnel (si pas en mode --quiet)
+        if not args.quiet and chunks:
+            display_chunks_summary(chunks, full_text=args.full_text)
+
+        output_file = output_root / f"chunks_family_{family}.jsonl"
+
+        # 6. Exportation JSONL (Streaming pour optimiser la mémoire)
+        try:
+            with open(output_file, "w", encoding="utf-8") as f:
+                for chunk in chunks:
+                    chunk_json = json.dumps(chunk.model_dump(), ensure_ascii=False)
+                    f.write(chunk_json + "\n")
+
+            logger.info(f"Succès ! {len(chunks)} chunks exportés pour la famille {family} dans '{output_file.resolve()}'.")
+        except IOError as e:
+            logger.error(f"Impossible d'écrire le fichier de sortie '{output_file}' : {e}")
+            continue
 
 if __name__ == "__main__":
     main()

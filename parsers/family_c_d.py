@@ -13,10 +13,9 @@ mais sur la STRUCTURE du classeur (lignes vides, cellules fusionnées, en-têtes
     ExcelWorkbookParser
                      un tableau est rendu selon sa forme :
                      - grille "groupes de colonnes répétés" (salles x créneaux)  -> famille D, 1 chunk / soutenance
-                     - liste d'étudiants (Matricule + Nom)                        -> famille C, 1 chunk / étudiant
-                                                                                    + effectif + listes par groupe
+                     - liste d'étudiants (Matricule + Nom)                        -> famille D, 1 chunk / étudiant
                      - tableau plat                                               -> famille C, 1 chunk / ligne
-                     - liste de texte libre                                       -> famille C-texte-libre
+                     - liste de texte libre                                       -> famille C, 1 chunk / sujet
 
 Chaque chunk est autonome : il porte son contexte (document, feuille, titres, section) dans le texte,
 car c'est le texte qui est vectorisé.
@@ -93,11 +92,40 @@ _YEAR_PAIR_RE = re.compile(r"(?<!\d)(20\d{2})\s*[-/_.]?\s*(20\d{2})(?!\d)")
 
 
 def year_pair(text: Optional[str]) -> Optional[str]:
-    """'20232024' / '2023-2024' / '2023/2024' -> '2023-2024' (années consécutives uniquement)."""
+    """'20232024' / '2023-2024' / '2023/2024' -> '2023/2024' (années consécutives uniquement)."""
     for m in _YEAR_PAIR_RE.finditer(text or ""):
         a, b = int(m.group(1)), int(m.group(2))
         if b == a + 1:
-            return f"{a}-{b}"
+            return f"{a}/{b}"
+    return None
+
+
+_LEVEL_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])(M[12]|L[1-3]|ING[1-5])(?![A-Za-z0-9])", re.IGNORECASE)
+
+
+def niveau_from_text(text: Optional[str]) -> Optional[str]:
+    """Déduit le niveau d'affichage (Licence / Master / Ingénieur) d'un texte.
+
+    Priorité aux codes explicites (M2, L3, ING1) puis aux mots pleins
+    (Licence(s), Master, Ingénieur). La source est, dans l'ordre, la section du
+    document (« Sujets Master »), le nom de fichier (« Jurys PFE Licence ») ou
+    le bandeau (« Liste des étudiants: M2 SSI A »).
+    """
+    if not text:
+        return None
+    m = _LEVEL_TOKEN_RE.search(text)
+    if m:
+        token = m.group(1).upper()
+        if token.startswith("M"):
+            return "Master"
+        return "Licence" if token.startswith("L") else "Ingénieur"
+    low = text.lower()
+    if re.search(r"\bmaster", low):
+        return "Master"
+    if re.search(r"\blicences?\b", low):
+        return "Licence"
+    if re.search(r"ing[ée]nieur", low):
+        return "Ingénieur"
     return None
 
 
@@ -131,6 +159,7 @@ def dedupe_consecutive(items: List[str]) -> List[str]:
 NOTE_RE = re.compile(r"^\s*(?:(?:NB|N\.B\.?)\b[:.\-]?|(?:Note|Remarque|Attention|Important)\s*[:.\-])\s*", re.IGNORECASE)
 SECTION_RE = re.compile(r"^Sujets?\s+(?:disponibles|licence|master|pfe|externes|acad|isil|gtr)\b.*:?$", re.IGNORECASE)
 SOURCE_RE = re.compile(r"^Source\s*:\s*(.*)$", re.IGNORECASE)
+RESOURCE_RE = re.compile(r"^\s*Liste de sujets?\s*:\s*(https?://\S+)\s*$", re.IGNORECASE)
 VERSION_RE = re.compile(r"^\s*version\b", re.IGNORECASE)
 INSTITUTION_RE = re.compile(
     r"^\s*(?:r[ée]publique|minist[èe]re|universit[ée]|facult[ée]|d[ée]partement|[ée]cole)\b", re.IGNORECASE)
@@ -383,10 +412,6 @@ def split_items(view: SheetView, r: int, c: int) -> List[str]:
     return [text] if text else []
 
 
-def _natural_key(v: str):
-    return (0, int(v), "") if v.isdigit() else (1, 0, v.lower())
-
-
 @ParserRegistry.register("EXCEL")
 class ExcelWorkbookParser(BaseFamilyParser):
     """Familles C (tableaux, listes, texte libre) et D (plannings / grilles de soutenances)."""
@@ -431,14 +456,23 @@ class ExcelWorkbookParser(BaseFamilyParser):
             return None
 
         annee = pick("annee_universitaire", [local, ctx.pre_meta, ctx.sheet_meta, ctx.file_meta])
-        if annee and "/" in annee:
-            annee = annee.replace("/", "-")
+        if annee:
+            annee = year_pair(annee) or annee
 
         return {
             "annee_universitaire": annee,
-            "niveau": pick("niveau", [local, ctx.file_meta, ctx.sheet_meta, ctx.pre_meta]),
+            "niveau": self._niveau(ctx, local_text),
             "formation": pick("formation", [local, ctx.file_meta, ctx.sheet_meta, ctx.pre_meta]),
         }
+
+    @staticmethod
+    def _niveau(ctx: SheetContext, local_text: str) -> Optional[str]:
+        """Niveau affiché : section du document > nom de fichier > feuille > bandeau."""
+        for text in (local_text, ctx.doc_title, ctx.sheet_name, " ".join(ctx.preamble)):
+            level = niveau_from_text(text)
+            if level:
+                return level
+        return None
 
     @staticmethod
     def _header(ctx: SheetContext, *extra: Optional[str]) -> str:
@@ -461,9 +495,13 @@ class ExcelWorkbookParser(BaseFamilyParser):
     # ------------------------------------------------------------------
     def parse(self, file_path: str, document_title: Optional[str] = None,
               effective_start_line: int = 0) -> List[Chunk]:
-        filename = document_title if document_title else os.path.basename(file_path)
-        doc_title = re.sub(r"\s+", " ", re.sub(r"\.(xlsx|xlsm|xls)$", "", filename, flags=re.I).replace("_", " ")).strip()
-        file_meta = self._extract(filename)
+        stem = os.path.splitext(os.path.basename(file_path))[0]
+        # Le nom de fichier d'un classeur est rédigé par l'administration : c'est
+        # le seul intitulé fiable (la 1re ligne de la feuille est un en-tête).
+        base = stem if re.search(r"[A-Za-zÀ-ÿ]{3,}", stem) else (document_title or stem)
+        filename = re.sub(r"\s+", " ", base.replace("_", " ")).strip()
+        doc_title = filename
+        file_meta = self._extract(stem)
         planning_hint = self._is_planning_file(filename)
         wb = openpyxl.load_workbook(file_path, data_only=True)
 
@@ -474,6 +512,8 @@ class ExcelWorkbookParser(BaseFamilyParser):
 
         chunks: List[Chunk] = []
         for idx, ws in enumerate(sheets):
+            if 'email' in ws.title.lower() or 'enseignant' in ws.title.lower():
+                continue
             view = SheetView(ws)
             sheet_year = year_pair(ws.title)
             is_contact_sheet = bool(re.search(r"emails?|annuaire|contact", ws.title, re.I))
@@ -481,7 +521,8 @@ class ExcelWorkbookParser(BaseFamilyParser):
                 doc_name=filename,
                 doc_title=doc_title,
                 sheet_name=ws.title,
-                sheet_display=(sheet_year or ws.title) if len(sheets) > 1 else None,
+                sheet_display=((f"Année universitaire {sheet_year}" if sheet_year else ws.title)
+                               if len(sheets) > 1 else None),
                 file_meta={} if is_contact_sheet else file_meta,
                 sheet_meta=self._extract(sheet_year or ws.title),
                 planning_hint=planning_hint,
@@ -571,8 +612,9 @@ class ExcelWorkbookParser(BaseFamilyParser):
                     lines.append(f"Source: {state.source}")
                 lines.append(f"{label}: {item}")
                 lines += self._notes_line(ctx)
+                family_txt = "D" if ctx.planning_hint else "C"
                 out.append(self._chunk("\n".join(lines), ctx.doc_name,
-                                       "C-texte-libre", ctx.sheet_name, f"{layout.r0}-{layout.r1}",
+                                       family_txt, ctx.sheet_name, f"{layout.r0}-{layout.r1}",
                                        state.section, self._meta(ctx, state.section or "", cache)))
         return out
 
@@ -643,6 +685,10 @@ class ExcelWorkbookParser(BaseFamilyParser):
 
         out: List[Chunk] = []
         band_title = " — ".join(layout.titles) if layout.titles else None
+        # Bandeau de bloc non capté par `titles` : il est porté par le premier
+        # niveau de la majorité des groupes de colonnes (ex. « Salle TP Nouveau Bloc »).
+        leading = Counter(key[0] for key in groups.keys() if len(key) >= 2)
+        block_label = leading.most_common(1)[0][0] if leading else None
         for r in layout.body_rows:
             keys = []
             for c in key_cols:
@@ -654,6 +700,10 @@ class ExcelWorkbookParser(BaseFamilyParser):
                 if not any(v for _, v in vals):
                     continue
                 salle, top = key[-1], (key[0] if len(key) >= 2 else None)
+                # Une colonne peut être hors du fusionnement du bandeau de bloc
+                # (ex. TPC9 dans « Salle TP Nouveau Bloc ») : le titre du bloc
+                # reste applicable à toute la ligne.
+                top_label = top or band_title or block_label
                 notes: List[str] = []
                 slot_override = None
                 for e in extra_cols:
@@ -688,11 +738,11 @@ class ExcelWorkbookParser(BaseFamilyParser):
                         else:
                             d_line.append((label, v))
                     d_line.sort(key=lambda kv: {"Projet": 0, "Président": 1, "Membres": 2}.get(kv[0], 3))
-                    lines.append("Soutenance PFE " + self._header(ctx, band_title, top))
+                    lines.append("Soutenance PFE " + self._header(ctx, band_title, top_label))
                     lines.append(" | ".join(f"{k}: {v}" for k, v in k_line))
                     lines.append(" | ".join(f"{k}: {v}" for k, v in d_line + [("Remarque", n) for n in notes]))
                 else:
-                    lines.append(self._header(ctx, band_title, top))
+                    lines.append(self._header(ctx, band_title, top_label))
                     lines.append(" | ".join([f"Groupe: {salle}"] + [f"{k}: {v}" for k, v in keys]))
                     extra_items = []
                     for e in extra_cols:
@@ -704,9 +754,9 @@ class ExcelWorkbookParser(BaseFamilyParser):
                     lines.append(" | ".join([f"{l}: {v}" for l, v in vals if v] + extra_items
                                             + [f"Remarque: {n}" for n in notes]))
                 lines += self._notes_line(ctx)
-                title_for_meta = " ".join(filter(None, [band_title, top]))
+                title_for_meta = top_label or band_title
                 out.append(self._chunk("\n".join(lines), ctx.doc_name, family, ctx.sheet_name,
-                                       f"{layout.table_r0}-{layout.r1}", top or band_title,
+                                       f"{layout.table_r0}-{layout.r1}", top_label,
                                        self._meta(ctx, title_for_meta, cache)))
         return out
 
@@ -729,6 +779,7 @@ class ExcelWorkbookParser(BaseFamilyParser):
             labels.append(label)
 
         rows: List[Tuple[int, "OrderedDict[str, str]"]] = []
+        resource_rows: set = set()
         for r in body:
             # Sauter les lignes d'en-tête répétées dans le corps (ex. en-têtes de saut de page)
             if all(view.raw(r, c.idx) == c.leaf for c in kept if c.leaf and view.raw(r, c.idx)):
@@ -745,7 +796,18 @@ class ExcelWorkbookParser(BaseFamilyParser):
             rec: "OrderedDict[str, str]" = OrderedDict()
             for c, label in zip(kept, labels):
                 v = view.body_value(r, c.idx)
-                if v:
+                lbl_l = str(label).lower()
+                if not v:
+                    if 'promoteur' in lbl_l:
+                        rec[label] = 'non renseigné'
+                    continue
+                link = RESOURCE_RE.match(v) if "sujet" in lbl_l else None
+                if link:
+                    # Un lien Drive n'est pas un sujet proposé : c'est une ressource
+                    # documentaire, rattachée à l'organisme de sa ligne.
+                    rec["Ressource"] = link.group(1)
+                    resource_rows.add(r)
+                else:
                     rec[label] = v
             if rec:
                 rows.append((r, rec))
@@ -764,61 +826,28 @@ class ExcelWorkbookParser(BaseFamilyParser):
         titles = [t for t in layout.titles if not (VERSION_RE.match(t) or NOTE_RE.match(t) or INSTITUTION_RE.match(t))]
         extra_title = " — ".join(titles) if titles else None
         header = self._header(ctx, extra_title, section)
-        family = "D" if ctx.planning_hint else "C"
+        family = "D" if (ctx.planning_hint or is_student) else "C"
         meta = self._meta(ctx, " ".join(filter(None, [extra_title, section])), cache)
         block_range = f"{layout.table_r0}-{layout.r1}"
-        block_title = section or extra_title
+        block_title = section or extra_title or ctx.doc_title
+        if is_student and header.endswith("]"):
+            # Listes d'étudiants : l'effectif est une propriété du document, il est
+            # rappelé dans chaque en-tête (aucun chunk agrégé, aucune liste dupliquée).
+            header = f"{header[:-1]} — {len(rows)} étudiants]"
 
         out: List[Chunk] = []
-        for _, rec in rows:
+        for r, rec in rows:
             fields = [(k, v) for k, v in rec.items() if k not in constants]
             if not fields:
                 continue
-            lines = [header] + ([const_line] if const_line else [])
+            is_resource = r in resource_rows
+            row_header = self._header(ctx, extra_title, section, "Ressource") if is_resource else header
+            lines = [row_header] + ([const_line] if const_line else [])
             lines.append(" | ".join(f"{k}: {v}" for k, v in fields))
             lines += self._notes_line(ctx)
-            out.append(self._chunk("\n".join(lines), ctx.doc_name, family, ctx.sheet_name,
-                                   block_range, block_title, meta))
-
-        if is_student:
-            out += self._student_summary(ctx, header, const_line, labels, constants, rows, family,
-                                         block_range, block_title, meta)
-        return out
-
-    # --- 4c. Liste d'étudiants : effectif + listes par groupe (unité naturelle d'un affichage) ---
-    def _student_summary(self, ctx: SheetContext, header: str, const_line: str, labels: List[str],
-                         constants: Dict[str, str], rows: List[Tuple[int, Dict[str, str]]], family: str,
-                         block_range: str, block_title: Optional[str], meta: Dict[str, Any]) -> List[Chunk]:
-        recs = [rec for _, rec in rows]
-        n = len(recs)
-        free = [l for l in labels if l not in constants]
-        categorical = []
-        for l in free:
-            counts = Counter(rec.get(l) for rec in recs if rec.get(l))
-            if 2 <= len(counts) <= 12 and len(counts) < n:
-                categorical.append((l, counts))
-
-        base = [header] + ([const_line] if const_line else [])
-        over = [f"Effectif: {n} étudiants" + (f" ({ctx.version})" if ctx.version else "")]
-        for l, counts in categorical:
-            over.append(f"{l}: " + ", ".join(f"{v} ({counts[v]})" for v in sorted(counts, key=_natural_key)))
-        out = [self._chunk("\n".join(base + over + self._notes_line(ctx)),
-                           ctx.doc_name, family, ctx.sheet_name, block_range, "Effectif", meta)]
-
-        group_label = next((l for l, _ in categorical if re.search(r"group", l, re.I)), None)
-        roster_cols = [l for l in free if l != group_label]
-        if group_label:
-            parts = OrderedDict()
-            for v in sorted({rec[group_label] for rec in recs if rec.get(group_label)}, key=_natural_key):
-                parts[f"{group_label}: {v}"] = [rec for rec in recs if rec.get(group_label) == v]
-        else:
-            parts = OrderedDict((f"Liste (partie {i // 40 + 1})", recs[i:i + 40]) for i in range(0, n, 40))
-        for title, members in parts.items():
-            for i in range(0, len(members), 40):
-                chunk_members = members[i:i + 40]
-                suffix = f" (partie {i // 40 + 1})" if len(members) > 40 else ""
-                lines = base + [f"{title}{suffix} — {len(members)} étudiants", " | ".join(roster_cols)]
-                lines += [" | ".join(rec.get(l, "") for l in roster_cols) for rec in chunk_members]
-                out.append(self._chunk("\n".join(lines + self._notes_line(ctx)), ctx.doc_name, family,
-                                       ctx.sheet_name, block_range, title, meta))
+            doc_name_fix = ctx.doc_name
+            if ctx.doc_name and re.match(r"^(n[°º]|promoteur|co-promoteur|sujet|titre|étudiant)", str(ctx.doc_name), re.I):
+                doc_name_fix = ctx.doc_title or ctx.doc_name
+            out.append(self._chunk("\n".join(lines), doc_name_fix, family, ctx.sheet_name,
+                                   block_range, "Ressource" if is_resource else block_title, meta))
         return out

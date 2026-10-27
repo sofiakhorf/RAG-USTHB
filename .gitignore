@@ -46,3 +46,15 @@ prompts/
 chunks_output.jsonl
 fichierVerif/
 Chunks_family/
+scratch/
+scripts_amelioration_chunking/
+
+
+
+
+# --- Backend Django (la cible de deploiement est PostgreSQL) ---
+# SQLite n'est utilise qu'en developpement/test, jamais en production,
+# donc ce fichier de developpement ne doit jamais etre commite.
+backend/db.sqlite3
+backend/staticfiles/
+*.sqlite3

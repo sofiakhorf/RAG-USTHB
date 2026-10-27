@@ -1,0 +1,21 @@
+FICHIER chunks_family_B.jsonl  —  141 chunks
+C0 family_type: {'B': 141}
+C5 tailles: min=57 max=17180 moy=1450 | <150: 61 ['L2(61)', 'L3(61)', 'L4(61)', 'L14(104)', 'L16(105)', 'L18(104)', 'L20(105)', 'L22(105)'] | >6000: 5 ['L6(7815)', 'L76(6942)', 'L78(17180)', 'L95(7197)', 'L141(7417)']
+C6 vides: [] | doublons norm: 25 ['L18=L14', 'L22=L16', 'L30=L28', 'L32=L28', 'L34=L28', 'L40=L38', 'L48=L44', 'L50=L44', 'L52=L44', 'L60=L58'] | points/underscores>8: 1 chunks {76: 34} | lignes 'page N': 240 dans 68 chunks | arabe: 0 []
+C7 remplissage: {'document_name': '141/141', 'formation': '141/141', 'niveau': '0/141', 'semestre': '136/141', 'ue': '112/141', 'matiere': '57/141', 'annee_universitaire': '0/141', 'page': '141/141', 'sheet_name': '0/141', 'block_range': '0/141', 'block_title': '0/141', 'chapter': '0/141', 'article_title': '0/141', 'is_fallback': '141/141'}
+C7 document_name (2): {"TRONC COMMUN INGÉNIEUR D'ETAT EN INFORMATIQUE 2023/2024": 75, 'Etablissement : USTHB Intitulé de la licence : ISIL': 66}
+C7 is_fallback: 0/141
+C1/C8 premières lignes top12:
+       5x | 'CYCLE_PREPARATOIRE TC-INGENIEUR > S3 > fondamentale > ?'
+       5x | 'CYCLE_PREPARATOIRE TC-INGENIEUR > S4 > Fondamentale > ?'
+       4x | 'CYCLE_PREPARATOIRE TC-INGENIEUR > S1 > Fondamentale > ?'
+       4x | 'CYCLE_PREPARATOIRE TC-INGENIEUR > S2 > Fondamentale. > ?'
+       3x | 'LICENCE ISIL > S3 > UEF31 > ?'
+       3x | 'LICENCE ISIL > S3 > UEM31 > ?'
+       3x | 'LICENCE ISIL > S5 > UEF51 > ?'
+       3x | 'LICENCE ISIL > S5 > UEF52 > ?'
+       2x | 'CYCLE_PREPARATOIRE TC-INGENIEUR > S1 > ? > ?'
+       2x | 'CYCLE_PREPARATOIRE TC-INGENIEUR > S2 > ? > ?'
+       2x | 'CYCLE_PREPARATOIRE TC-INGENIEUR > S3 > ? > ?'
+       2x | 'CYCLE_PREPARATOIRE TC-INGENIEUR > S4 > ? > ?'
+Patterns: {'Page \\d': '64 L1,L6,L15,L17,L19,L21,L23,L25', 'S OMMA': '1 L1', 'Algorithmique': '24 L5,L7,L9,L15,L21,L29,L33,L43', 'Anglais': '13 L11,L41,L75,L77,L80,L81,L83,L85', 'Théorie des Graphes': '4 L11,L69,L83,L115', 'crédit': '70 L5,L7,L9,L10,L11,L12,L13,L15', 'coefficient': '61 L5,L7,L9,L11,L13,L15,L17,L19'}

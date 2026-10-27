@@ -169,10 +169,15 @@ class FamilyHParser(BaseFamilyParser):
                         body = "\n".join(self._seance_to_sentence(s) for s in day_sessions)
                     else:
                         body = "Aucune séance programmée ce jour-là (pas de cours, TD ni TP)."
+                    # document_name : le titre effectif du routeur est ici un
+                    # en-tête institutionnel anglais (« University of Science
+                    # and Technology… ») ; on préfère la formation lue dans le
+                    # PDF (« Schedules of : 4rd year CS.ENG -- Section : A »).
+                    doc_name = block.metadata.get("formation") or clean_title
                     chunks.append(Chunk(
                         text=f"{header}\n{self._day_label(day)} :\n{body}",
                         metadata=ChunkMetadata(
-                            document_name=clean_title,
+                            document_name=doc_name,
                             family_type="H",
                             formation=block.metadata.get("formation"),
                             annee_universitaire=block.metadata.get("annee_universitaire"),
