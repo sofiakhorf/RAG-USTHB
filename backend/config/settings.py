@@ -1,4 +1,3 @@
-
 """
 Django settings for the RAG-USTHB backend.
 Configuration is loaded from the root .env file.
@@ -21,13 +20,24 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BASE_DIR.parent
+PREPROCESSING_DIR = REPO_ROOT / "preprocessing"
 
-if str(REPO_ROOT) not in sys.path:
-    sys.path.append(str(REPO_ROOT))
+# Repo root: `rag.*`. Preprocessing: `core.models`, `parsers`, `pipeline`.
+# Append, never insert: Django's `config` package must stay first on sys.path.
+for _path in (REPO_ROOT, PREPROCESSING_DIR):
+    _path_str = str(_path)
+    if _path_str not in sys.path:
+        sys.path.append(_path_str)
 
 # Load RAG-USTHB/.env
 ENV_FILE = REPO_ROOT / ".env"
 load_dotenv(ENV_FILE)
+
+# Optional per-environment overrides, loaded second so it can fill in anything
+# the root file leaves unset. This is where the LLM credentials are meant to
+# live (``backend/.env``); it is matched by the ``.env*`` ignore rule, so a
+# real key can never be committed. Absent file -> nothing happens.
+load_dotenv(BASE_DIR / ".env")
 
 
 # --------------------------------------------------
@@ -88,9 +98,17 @@ if not SECRET_KEY:
 
 DEBUG = False if IS_PRODUCTION else env_bool("DEBUG", True)
 
+#: The Next.js dev server proxies /api/* to Django (see frontend/next.config.mjs)
+#: so that session + CSRF cookies stay first-party. Depending on the proxy
+#: implementation the Host header reaching Django is either the Next origin or
+#: the Django origin, so both are accepted in development.
 ALLOWED_HOSTS = env_list(
     "ALLOWED_HOSTS",
-    "localhost,127.0.0.1,[::1],testserver"
+    "localhost,127.0.0.1,[::1],testserver,"
+    "localhost:3000,127.0.0.1:3000,"
+    "localhost:3001,127.0.0.1:3001,"
+    "localhost:3100,127.0.0.1:3100,"
+    "127.0.0.1:8000"
     if not IS_PRODUCTION
     else "",
 )
@@ -99,6 +117,20 @@ if IS_PRODUCTION and not ALLOWED_HOSTS:
     raise ImproperlyConfigured(
         "ALLOWED_HOSTS is required in production."
     )
+
+
+#: Origin(s) allowed to send cross-site POSTs (CSRF). In development the
+#: Next.js dev server is the only client; in production set FRONTEND_ORIGIN to
+#: the deployed frontend URL.
+#: NOTE: if FRONTEND_ORIGIN is set in .env, it REPLACES these defaults.
+CSRF_TRUSTED_ORIGINS = env_list(
+    "FRONTEND_ORIGIN",
+    "http://localhost:3000,http://127.0.0.1:3000,"
+    "http://localhost:3001,http://127.0.0.1:3001,"   # <-- FIX: port 3001 added
+    "http://localhost:3100,http://127.0.0.1:3100"
+    if not IS_PRODUCTION
+    else "",
+)
 
 
 # --------------------------------------------------
@@ -177,6 +209,7 @@ INSTALLED_APPS = [
 
     # Project apps. Add API packages (e.g. rest_framework) back here when the
     # features they back are actually implemented.
+    "rest_framework",
     "users",
     "chatbot",
 ]
@@ -230,10 +263,23 @@ TEMPLATES = [
 ]
 
 
-# --------------------------------------------------
+# -------------------------------------------------
 # Password validation
-# --------------------------------------------------
-
+# -------------------------------------------------
+# RAG-USTHB policy (see the project spec): a student password is **exactly 8
+# digits**, i.e. a numeric PIN. Two of Django's stock validators are therefore
+# deliberately disabled rather than fought with at every call site:
+#
+#   * NumericPasswordValidator - rejects any all-numeric password, which would
+#     reject *every* valid RAG-USTHB password.
+#   * CommonPasswordValidator  - its blocklist contains "12345678", which is a
+#     legitimate 8-digit PIN under this policy.
+#
+# MinimumLengthValidator stays (a PIN shorter than 8 is rejected), and
+# UserAttributeSimilarityValidator stays (a PIN equal to the student's own
+# matricule/e-mail is still refused). Django's `set_password` hashes with
+# PBKDF2-SHA256 regardless of which validators are configured, so storage
+# remains salted and irreversible.
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": (
@@ -248,19 +294,31 @@ AUTH_PASSWORD_VALIDATORS = [
         ),
         "OPTIONS": {"min_length": 8},
     },
-    {
-        "NAME": (
-            "django.contrib.auth.password_validation."
-            "CommonPasswordValidator"
-        ),
-    },
-    {
-        "NAME": (
-            "django.contrib.auth.password_validation."
-            "NumericPasswordValidator"
-        ),
-    },
 ]
+
+
+# -------------------------------------------------
+# Django REST framework
+# -------------------------------------------------
+# Session authentication only: the browser talks to /api/* through the Next.js
+# proxy on the same origin, so Django's session + CSRF cookies are first-party
+# and no token is ever stored in localStorage.
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        # Every endpoint is private unless it opts out explicitly (register,
+        # login, logout, csrf).
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+    ],
+}
 
 
 # --------------------------------------------------

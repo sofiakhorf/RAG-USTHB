@@ -7,29 +7,29 @@ chroma_db/
 faiss_index/
 vectorstore/
 *.db
-
-# SQLite local (Développement)
-backend/db.sqlite3
-backend/staticfiles/
 *.sqlite3
 
 # --- Configuration, Environnement et Clés API ---
 .env
-.env*
+.env.local
+.env.*.local
 .venv/
 .vercel
+.idea/
+.vscode/
 
 # --- Dépendances (Node.js & Python) ---
-/node_modules
+node_modules/
 check_deps.py
 
 # --- Cache et Fichiers temporaires de Build ---
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-/.next/
-/out/
-/build
+.next/
+out/
+build/
+dist/
 *.tsbuildinfo
 next-env.d.ts
 
@@ -42,19 +42,10 @@ yarn-error.log*
 
 # --- Fichiers d'audit, Prompts et Rapports temporaires ---
 audit/
-prompts/
 chunks_output.jsonl
 fichierVerif/
 Chunks_family/
 scratch/
 scripts_amelioration_chunking/
-
-
-
-
-# --- Backend Django (la cible de deploiement est PostgreSQL) ---
-# SQLite n'est utilise qu'en developpement/test, jamais en production,
-# donc ce fichier de developpement ne doit jamais etre commite.
-backend/db.sqlite3
-backend/staticfiles/
-*.sqlite3
+preprocessing/chunks_audit/rapport_*.json
+preprocessing/Chunks_family/
