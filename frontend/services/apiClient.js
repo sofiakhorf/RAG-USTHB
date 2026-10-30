@@ -1,41 +1,20 @@
+
 /**
  * Shared HTTP client for every backend call.
- *
- * Requests are **relative** (`/api/...`) because `next.config.mjs` proxies that
- * path onto Django. Same-origin means the session cookie travels automatically
- * and no CORS or token storage is involved.
- *
- * CSRF
- * ----
- * Django protects every mutating request with a double-submit token. The flow
- * is:
- *
- *   1. `GET /api/auth/csrf/` seeds the `csrftoken` cookie (same-origin, so the
- *      browser keeps it).
- *   2. Every POST/PUT/PATCH/DELETE echoes it back in the `X-CSRFToken` header.
- *   3. If Django ever rejects it (the cookie can be rotated), the token is
- *      re-seeded and the request is retried **once** - so a stale tab recovers
- *      instead of failing mysteriously.
- *
- * No secret is read here. The only configuration is the path prefix, which is
- * empty because the proxy makes the backend look local.
+ * Requests use the same-origin Next.js proxy.
  */
 
-/** Base path for all API calls. Empty = same origin, proxied by Next.js. */
 export const API_BASE_URL = ''
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
-/** Thrown for any non-2xx answer, carrying everything the UI needs to react. */
 export class ApiError extends Error {
-  /**
-   * @param {object} options
-   * @param {string} options.message Human-readable fallback message.
-   * @param {number} [options.status] HTTP status code.
-   * @param {string} [options.code] Machine-readable code (`detail`, `rag_unavailable`...).
-   * @param {Record<string,string>} [options.fieldErrors] Per-field validation messages.
-   */
-  constructor({ message, status = 0, code = 'request_failed', fieldErrors = {} }) {
+  constructor({
+    message,
+    status = 0,
+    code = 'request_failed',
+    fieldErrors = {},
+  }) {
     super(message)
     this.name = 'ApiError'
     this.status = status
@@ -44,53 +23,69 @@ export class ApiError extends Error {
   }
 }
 
-/** True when a failure means "nobody is signed in". */
 export function isAuthError(error) {
-  return error instanceof ApiError && (error.status === 401 || error.status === 403)
+  return error instanceof ApiError &&
+    (error.status === 401 || error.status === 403)
 }
-
-let csrfToken = null
 
 function readCookie(name) {
   if (typeof document === 'undefined') return null
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+
+  const escapedName = name.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    '\\$&'
+  )
+
+  const match = document.cookie.match(
+    new RegExp(`(?:^|;\\s*)${escapedName}=([^;]*)`)
+  )
+
   return match ? decodeURIComponent(match[1]) : null
 }
 
 /**
- * Make sure the CSRF cookie exists and is cached for the headers.
- *
- * @returns {Promise<string|null>} The token, or null if the seed failed.
+ * Always request a fresh CSRF cookie from Django.
  */
 export async function ensureCsrfToken() {
-  if (csrfToken) return csrfToken
-
   try {
-    await fetch(`${API_BASE_URL}/api/auth/csrf/`, {
-      method: 'GET',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    })
-  } catch {
-    // A failed seed is reported by the real request below, not here.
-    return null
-  }
+    const response = await fetch(
+      `${API_BASE_URL}/api/auth/csrf/`,
+      {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: {
+          Accept: 'application/json',
+        },
+      }
+    )
 
-  csrfToken = readCookie('csrftoken')
-  return csrfToken
+    if (!response.ok) {
+      throw new Error(`CSRF request failed: ${response.status}`)
+    }
+
+    const token = readCookie('csrftoken')
+
+    if (!token) {
+      throw new Error('CSRF cookie was not found.')
+    }
+
+    return token
+  } catch (cause) {
+    throw new ApiError({
+      message: cause?.message || 'Could not obtain CSRF token.',
+      status: 0,
+      code: 'csrf_unavailable',
+    })
+  }
 }
 
-/** Forget the cached token; the next request re-seeds it. */
 export function resetCsrfToken() {
-  csrfToken = null
+  // No in-memory token is cached anymore.
 }
 
 /**
- * Turn a DRF error body into a flat, UI-ready shape.
- *
- * DRF reports field problems as `{"email": ["message"]}` and top-level ones as
- * `{"detail": "message"}`. Anything that is not a plain string is ignored so a
- * nested payload cannot end up rendered verbatim.
+ * Parse Django REST Framework error responses.
  */
 function parseErrorBody(body) {
   const fieldErrors = {}
@@ -104,6 +99,7 @@ function parseErrorBody(body) {
   if (typeof body.detail === 'string') {
     message = body.detail
   }
+
   if (typeof body.error === 'string') {
     code = body.error
   }
@@ -117,93 +113,107 @@ function parseErrorBody(body) {
     } else if (typeof value === 'string') {
       fieldErrors[key] = value
       if (!message) message = value
-    } else if (value && typeof value === 'object') {
-      // Nested: {"email": {"email": "…"}} from a nested serializer.
-      const [firstKey, firstValue] = Object.entries(value)[0] ?? []
-      if (typeof firstValue === 'string') {
-        fieldErrors[key] = firstValue
-        if (!message) message = firstValue
-      } else if (Array.isArray(firstValue) && typeof firstValue[0] === 'string') {
-        fieldErrors[key] = firstValue[0]
-        if (!message) message = firstValue[0]
-      } else if (firstKey) {
-        fieldErrors[firstKey] = String(firstValue)
-      }
     }
   }
 
   return { fieldErrors, message, code }
 }
 
+async function readResponse(response) {
+  const contentType = response.headers.get('content-type') || ''
+  const raw = await response.text()
+
+  if (!raw) return null
+
+  try {
+    return contentType.includes('application/json')
+      ? JSON.parse(raw)
+      : { detail: raw.slice(0, 300) }
+  } catch {
+    return { detail: raw.slice(0, 300) }
+  }
+}
+
 /**
- * Perform one API call.
- *
- * @param {string} path e.g. `/api/auth/login/`.
- * @param {object} [options]
- * @param {string} [options.method] Defaults to `GET`.
- * @param {object} [options.body] JSON-serialised request body.
- * @param {AbortSignal} [options.signal]
- * @param {number} [options.retries] Internal; used for the one CSRF retry.
- * @returns {Promise<any>} The parsed JSON body.
- * @throws {ApiError} On network failure or a non-2xx response.
+ * Perform one API request.
  */
 export async function apiFetch(path, options = {}) {
-  const { method = 'GET', body, signal, retries = 1 } = options
-  const isMutating = MUTATING_METHODS.has(method.toUpperCase())
+  const {
+    method = 'GET',
+    body,
+    signal,
+    retries = 1,
+  } = options
 
-  if (isMutating) await ensureCsrfToken()
+  const normalizedMethod = method.toUpperCase()
+  const isMutating = MUTATING_METHODS.has(normalizedMethod)
 
-  const headers = { Accept: 'application/json' }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
-  if (isMutating && csrfToken) headers['X-CSRFToken'] = csrfToken
+  // Get a fresh CSRF token before every mutating request.
+  let token = null
+
+  if (isMutating) {
+    token = await ensureCsrfToken()
+  }
+
+  const headers = {
+    Accept: 'application/json',
+    ...options.headers,
+  }
+
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+  }
+
+  if (isMutating) {
+    headers['X-CSRFToken'] = token
+  }
 
   let response
+
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
-      method,
+      method: normalizedMethod,
       credentials: 'same-origin',
+      cache: 'no-store',
       headers,
       signal,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined
+        ? undefined
+        : JSON.stringify(body),
     })
   } catch (cause) {
     if (cause?.name === 'AbortError') throw cause
+
     throw new ApiError({
-      message: cause?.message ?? 'The server could not be reached.',
+      message: cause?.message || 'The server could not be reached.',
       status: 0,
       code: 'network',
     })
   }
 
-  // CSRF cookie rotated since the seed - re-seed once and try again, rather
-  // than surfacing a confusing 403 to the user.
-  if (response.status === 403 && isMutating && retries > 0) {
-    const text = await response.text()
-    if (/csrf/i.test(text)) {
-      resetCsrfToken()
-      return apiFetch(path, { ...options, retries: retries - 1 })
-    }
-    return apiFetch(path, { ...options, retries: 0 })
-  }
+  const parsed = await readResponse(response)
 
-  const contentType = response.headers.get('content-type') ?? ''
-  const raw = await response.text()
-  let parsed = null
+  // Retry once only when Django explicitly reports a CSRF failure.
+  const csrfFailed =
+    response.status === 403 &&
+    isMutating &&
+    typeof parsed?.detail === 'string' &&
+    /csrf/i.test(parsed.detail)
 
-  if (raw) {
-    try {
-      parsed = contentType.includes('application/json') ? JSON.parse(raw) : { detail: raw }
-    } catch {
-      parsed = { detail: raw.slice(0, 300) }
-    }
+  if (csrfFailed && retries > 0) {
+    return apiFetch(path, {
+      ...options,
+      retries: retries - 1,
+    })
   }
 
   if (!response.ok) {
     const { fieldErrors, message, code } = parseErrorBody(parsed)
+
     throw new ApiError({
       message: message || `Request failed with status ${response.status}.`,
       status: response.status,
-      code: parsed?.error ?? code,
+      code: parsed?.error || code,
       fieldErrors,
     })
   }
@@ -212,7 +222,12 @@ export async function apiFetch(path, options = {}) {
 }
 
 export const api = {
-  get: (path, options) => apiFetch(path, { ...options, method: 'GET' }),
-  post: (path, body, options) => apiFetch(path, { ...options, method: 'POST', body }),
-  delete: (path, options) => apiFetch(path, { ...options, method: 'DELETE' }),
+  get: (path, options) =>
+    apiFetch(path, { ...options, method: 'GET' }),
+
+  post: (path, body, options) =>
+    apiFetch(path, { ...options, method: 'POST', body }),
+
+  delete: (path, options) =>
+    apiFetch(path, { ...options, method: 'DELETE' }),
 }
