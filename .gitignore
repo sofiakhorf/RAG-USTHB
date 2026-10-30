@@ -1,5 +1,6 @@
 # --- Base de données et fichiers de données ---
-data/*
+
+
 !data/.gitkeep
 
 # Base de données vectorielle / Index RAG
