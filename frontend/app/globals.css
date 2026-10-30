@@ -139,6 +139,12 @@
     @apply bg-background text-foreground;
     min-height: 100dvh;
     margin: 0;
+    font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  }
+
+  /* Arabic uses the dedicated Arabic typeface. `dir` is set server-side from
+     the stored language cookie, so this applies on the very first paint. */
+  [dir='rtl'] body {
     font-family: var(--font-arabic), Arial, Helvetica, sans-serif;
   }
 
@@ -146,6 +152,34 @@
     color: var(--primary-foreground);
     background: var(--primary);
   }
+
+  /* Markdown Typography */
+  .prose-rag {
+    @apply text-[13px] leading-7;
+  }
+
+  .prose-rag h1 { @apply mt-6 mb-4 text-xl font-bold text-deep-blue dark:text-foreground; }
+  .prose-rag h2 { @apply mt-5 mb-3 text-lg font-bold text-deep-blue dark:text-foreground; }
+  .prose-rag h3 { @apply mt-4 mb-2 text-base font-bold text-deep-blue dark:text-foreground; }
+  .prose-rag p { @apply mb-3; }
+  .prose-rag p:last-child { @apply mb-0; }
+  .prose-rag ul { @apply mb-3 list-disc ps-5; }
+  .prose-rag ol { @apply mb-3 list-decimal ps-5; }
+  .prose-rag li { @apply mb-1; }
+  .prose-rag strong { @apply font-bold text-deep-blue dark:text-foreground; }
+  .prose-rag blockquote { @apply my-4 border-s-4 border-border ps-4 italic text-muted-foreground; }
+  .prose-rag code { @apply rounded bg-secondary px-1.5 py-0.5 font-mono text-[12px] text-link; }
+  .prose-rag pre { @apply my-4 overflow-x-auto rounded-lg bg-secondary/80 p-4 font-mono text-[12px]; }
+  .prose-rag pre code { @apply p-0 text-foreground bg-transparent; }
+  .prose-rag table { @apply my-4 w-full border-collapse text-start; }
+  .prose-rag th, .prose-rag td { @apply border border-border p-2 text-start; }
+  .prose-rag th { @apply bg-secondary font-bold; }
+  .prose-rag hr { @apply my-6 border-t border-border; }
+  .prose-rag a { @apply text-link underline transition hover:text-deep-blue; }
+
+  [dir='rtl'] .prose-rag ul, 
+  [dir='rtl'] .prose-rag ol { @apply ps-0 pe-5; }
+  [dir='rtl'] .prose-rag blockquote { @apply border-s-0 border-e-4 ps-0 pe-4; }
 }
 
 .app-scroll {

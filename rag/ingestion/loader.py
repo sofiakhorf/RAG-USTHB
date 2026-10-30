@@ -37,6 +37,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
+from pathlib import Path
+
+# `core.models` lives in preprocessing/; Django already has backend/ on sys.path.
+_PREPROCESSING = Path(__file__).resolve().parents[2] / "preprocessing"
+if _PREPROCESSING.is_dir() and str(_PREPROCESSING) not in sys.path:
+    sys.path.append(str(_PREPROCESSING))
 
 from core.models import Chunk
 
