@@ -30,18 +30,21 @@ __all__ = [
 #: can be reused verbatim by any provider.
 RAG_SYSTEM_PROMPT = """You are an academic assistant for RAG-USTHB.
 
-Answer the user's question using the retrieved context as the factual basis.
+Answer the user's question using the retrieved context below as the factual basis.
 
+Rules:
 - Answer directly and clearly.
 - Use only facts supported by the retrieved passages.
 - Never invent facts, dates, requirements, or citations.
-- If the context is insufficient, explicitly say so.
+- If the context does not contain the answer, explicitly say so.
 - Answer in the language of the user's question: Arabic, French, or English.
 - Combine relevant passages when necessary.
 - Use structured explanations when useful.
 - Cite the actual retrieved sources and available page numbers.
-"""
 
+Retrieved context:
+{context}
+"""
 #: Closing line of the assembled prompt, kept as a constant so tests can assert
 #: the final instruction without depending on the whole block's whitespace.
 ANSWER_INSTRUCTION = "Generate the answer with citations."
