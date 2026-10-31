@@ -186,8 +186,6 @@ Planned improvements include:
 
 - **Live Application:** https://rag-usthb-flrj.vercel.app
 - **GitHub Repository:** https://github.com/sofiakhorf/RAG-USTHB
-- **Backend API:** https://rag-usthb-1.onrender.com
-- **Hugging Face Embedding Service:** https://huggingface.co/spaces/salsabilhm/rag-usthb-embeddings
 
 ---
 
