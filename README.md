@@ -1,96 +1,203 @@
-# RAG-USTHB — Retrieval-Augmented Generation System
+# SAHLA — The USTHB Answer Engine
 
-A document-based AI assistant designed to retrieve relevant information from university documents and generate context-aware answers using Retrieval-Augmented Generation (RAG).
+<p align="center">
+  <strong>An AI-powered university assistant that makes academic information easier to find.</strong>
+</p>
+
+<p align="center">
+  <a href="https://rag-usthb-flrj.vercel.app">Live Demo</a> ·
+  <a href="https://github.com/sofiakhorf/RAG-USTHB">GitHub Repository</a>
+</p>
+
+---
 
 ## Overview
 
-**RAG-USTHB** is an academic document assistant that allows users to ask questions about university-related documents and receive answers based on retrieved content.
+**SAHLA** is a Retrieval-Augmented Generation (RAG) chatbot designed to help students at the University of Science and Technology Houari Boumediene (USTHB) access academic and administrative information more easily.
 
-Instead of relying only on the language model's general knowledge, the system processes documents, extracts their content, divides it into smaller chunks, and retrieves relevant information to provide context for answer generation.
+Students can ask questions in natural language and receive relevant, clear answers based on university documents, accompanied by references to the original sources.
 
-The main objective is to make academic and institutional information easier to access, search, and understand.
+The project focuses on making scattered university information searchable through a simple, student-friendly interface.
+
+## The Problem
+
+University information is often distributed across different platforms and document formats, including:
+
+- Official university websites and announcements.
+- PDF documents and academic regulations.
+- Excel files and study programs.
+- Scanned documents in Arabic and French.
+- Different academic and administrative publications.
+
+As a result, students may need to browse multiple pages and documents just to find one specific piece of information.
+
+This process can be time-consuming, frustrating, and sometimes unsuccessful.
+
+## Our Solution
+
+SAHLA provides a centralized, AI-powered question-answering experience.
+
+Instead of manually searching through multiple documents, students can simply ask a question and receive an answer generated from relevant university information.
+
+Our system combines:
+
+- **Automated Document Processing:** Extracting and organizing information from different document formats.
+- **Multilingual OCR:** Handling scanned documents in Arabic and French.
+- **Intelligent Chunking:** Dividing documents into structured, searchable text segments while preserving their metadata and source information.
+- **Semantic Search:** Finding relevant information based on the meaning of a student's question.
+- **Retrieval-Augmented Generation (RAG):** Using retrieved document content to generate answers grounded in available sources.
 
 ## Key Features
 
-- **Document preprocessing:** Extract and prepare content from supported document formats.
-- **Text cleaning:** Organize extracted content before indexing.
-- **Document chunking:** Split documents into smaller segments for retrieval.
-- **Semantic retrieval:** Retrieve relevant document content for a user's question.
-- **Context-aware generation:** Generate responses using retrieved context.
-- **Source references:** Display available document references alongside responses.
-- **Interactive interface:** Provide a chat-based experience for asking questions.
-- **Multilingual text support:** Handle Arabic, French, and English text presentation.
-
-> Note: The exact supported formats, embedding provider, vector storage implementation, and language model should be documented according to the current configuration of the project.
+- Natural-language question answering.
+- Retrieval of relevant university information.
+- Source-based answers with document references.
+- Support for multiple document formats.
+- Arabic and French OCR for scanned documents.
+- Multilingual semantic embeddings.
+- A simple and accessible student-facing interface.
 
 ## System Architecture
 
-The system follows a Retrieval-Augmented Generation workflow.
+SAHLA follows a modular RAG architecture, separating document ingestion, embedding generation, information retrieval, and answer generation.
 
 ```mermaid
 flowchart TD
-    A[University Documents] --> B[Document Preprocessing]
-    B --> C[Text Extraction]
-    C --> D[Text Cleaning]
-    D --> E[Document Chunking]
-    E --> F[JSONL Output]
-    F --> G[Document Ingestion]
-    G --> H[Embeddings]
-    H --> I[Vector Storage]
-    
-    J[User Question] --> K[Backend API]
-    K --> L[Query Processing]
-    L --> M[Similarity Retrieval]
-    I --> M
-    M --> N[Retrieved Context]
-    N --> O[LLM Generation]
-    O --> P[Generated Answer and Sources]
-    P --> Q[Frontend Chat Interface]
+    A["University Documents"] --> B["Document Router"]
+    B --> C["Document Processor"]
+    C --> D["Specialized Parsers"]
+    D --> E["Text Extraction & OCR"]
+    E --> F["Cleaning & Chunking"]
+    F --> G["Structured JSONL Chunks"]
+    G --> H["Embedding Generation"]
+    H --> I["Database"]
+
+    J["Student Question"] --> K["Query Embedding"]
+    K --> L["Similarity Search"]
+    I --> L
+    L --> M["Relevant Context"]
+    M --> N["LLM Answer Generation"]
+    N --> O["Answer + Source References"]
+    O --> P["Student Interface"]
 ```
 
-## How It Works
+### 1. Document Ingestion Pipeline
 
-### 1. Document Preprocessing
-
-The preprocessing stage prepares source documents for the RAG pipeline.
-
-Its main operations include:
-
-- Reading documents.
-- Extracting textual content.
-- Cleaning extracted text.
-- Dividing content into chunks.
-- Preparing structured output in JSONL format.
-
-### 2. Document Ingestion
-
-The ingestion stage takes the prepared chunks and processes them for retrieval.
+The ingestion pipeline prepares university documents for retrieval.
 
 It includes:
 
-- Loading processed document data.
-- Generating vector embeddings.
-- Storing the representations in the configured vector storage system.
+- A Router to identify document families.
+- A Processor to coordinate document processing.
+- Ten family-specific parsers.
+- A batch runner for processing multiple documents.
+- Text extraction, OCR, cleaning, and chunk generation.
 
-### 3. Retrieval
+The pipeline produces structured JSONL chunks containing extracted content and associated metadata.
 
-When a user submits a question:
+### 2. Embedding Generation
 
-1. The question is received by the backend.
-2. The query is processed.
-3. Relevant document chunks are retrieved using similarity search.
-4. The retrieved content is prepared as context.
+Each text chunk is transformed into a numerical vector using the multilingual Sentence Transformers model:
+
+`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
+
+The model generates 384-dimensional embeddings, allowing the system to represent text semantically and compare its meaning with student questions.
+
+Embedding generation is handled through a dedicated Hugging Face Space.
+
+### 3. Database & Retrieval
+
+The processed chunks, metadata, and embeddings are stored in the database.
+
+When a student submits a question:
+
+1. The question is converted into an embedding.
+2. The system compares it with stored chunk embeddings.
+3. Cosine similarity is used to rank relevant chunks.
+4. The most relevant information is selected as context.
 
 ### 4. Answer Generation
 
-The retrieved context is provided to the language model to generate an answer.
+The retrieved context is passed to the configured LLM API.
 
-The objective is to produce responses grounded in the available documents rather than relying exclusively on general model knowledge.
+The language model uses this context to generate a clear response grounded in the available university documents.
 
-### 5. Frontend Presentation
+The final response includes relevant source references to help students identify the original information.
 
-The frontend displays the conversation and generated answers.
+## Technology Stack
 
-It supports formatted Markdown content, including headings, lists, tables, and code blocks. The interface also includes text-direction handling for Arabic and mixed-language content.
+| Category | Technologies |
+|---|---|
+| Programming Languages | Python, TypeScript, SQL |
+| Frontend | React, Vite, Tailwind CSS |
+| Backend | Django, Django REST Framework, Pydantic |
+| Database | PostgreSQL, Supabase |
+| Document Processing | PyMuPDF, pdfplumber, python-docx, openpyxl |
+| OCR & Image Processing | Tesseract OCR, Pillow, LibreOffice |
+| Embeddings | Sentence Transformers |
+| Retrieval | Cosine Similarity Search |
+| Answer Generation | LLM API, OpenRouter |
+| AI Model | `cohere/north-mini-code:free` (configured model ID) |
+| Hosting | Vercel, Render, Hugging Face Spaces |
+| Development & Version Control | Git, GitHub, Scrapy |
 
-##
+Additional development support tools include v0 for frontend scaffolding, AI coding assistance, and an AI-assisted chunk-audit workflow.
+
+## Current Deployment
+
+- **Frontend:** [SAHLA Web Application](https://rag-usthb-flrj.vercel.app)
+- **Backend:** [Django REST API](https://rag-usthb-1.onrender.com)
+- **Source Code:** [GitHub Repository](https://github.com/sofiakhorf/RAG-USTHB)
+- **Embedding Service:** [Hugging Face Space](https://huggingface.co/spaces/salsabilhm/rag-usthb-embeddings)
+
+## Current Scope & Limitations
+
+The current MVP focuses on USTHB students, particularly students who need academic and administrative information.
+
+Current limitations include:
+
+- The knowledge base is focused on USTHB.
+- Answer quality depends on the availability and quality of source documents.
+- Local dialect understanding requires further improvement.
+- Document management and user-role capabilities remain limited.
+- Hosting resources may affect response times and scalability.
+
+## Future Development
+
+Our vision is to evolve SAHLA into a more scalable and flexible university information platform.
+
+Planned improvements include:
+
+1. **Multi-University Support:** Expanding the platform to support multiple universities, with separate knowledge bases and data isolation.
+2. **Multiple User Roles:** Introducing dedicated experiences and permissions for students, professors, and administrative staff.
+3. **Personal Document Upload:** Allowing students to upload their own PDFs and ask questions about their content.
+4. **Enhanced Multilingual Support:** Improving Arabic, French, English, and local dialect understanding.
+5. **Advanced AI Assistance:** Adding document summarization, lesson explanations, and other academic support features.
+6. **Performance & Scalability:** Improving retrieval efficiency, infrastructure, and system performance as the platform grows.
+
+## Team
+
+**Built by students, for students.**
+
+| Team Member | Contribution |
+|---|---|
+| **Sofia Khorf** | Document ingestion pipeline, routing, specialized parsers, bilingual OCR, and chunk quality auditing. |
+| **Salsabil Hamdane** | Embeddings, database integration, similarity-based retrieval, and Django REST backend. |
+| **Mohamed Amine** | Frontend development and student-facing user experience. |
+
+## Project Links
+
+- **Live Application:** https://rag-usthb-flrj.vercel.app
+- **GitHub Repository:** https://github.com/sofiakhorf/RAG-USTHB
+- **Backend API:** https://rag-usthb-1.onrender.com
+- **Hugging Face Embedding Service:** https://huggingface.co/spaces/salsabilhm/rag-usthb-embeddings
+
+---
+
+<p align="center">
+  <strong>SAHLA — Making University Information Accessible, One Question at a Time.</strong>
+</p>
+
+<p align="center">
+  Developed as part of the <strong>Thirduni Cohort 1 — Build with AI Program (2026)</strong>.
+</p>
