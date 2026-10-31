@@ -146,9 +146,6 @@ Additional development support tools include v0 for frontend scaffolding, AI cod
 ## Current Deployment
 
 - **Frontend:** [SAHLA Web Application](https://rag-usthb-flrj.vercel.app)
-- **Backend:** [Django REST API](https://rag-usthb-1.onrender.com)
-- **Source Code:** [GitHub Repository](https://github.com/sofiakhorf/RAG-USTHB)
-- **Embedding Service:** [Hugging Face Space](https://huggingface.co/spaces/salsabilhm/rag-usthb-embeddings)
 
 ## Current Scope & Limitations
 
