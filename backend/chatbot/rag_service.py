@@ -229,6 +229,11 @@ def embed_query(text: str) -> list[float]:
     try:
         from rag.embeddings.encoder import create_embeddings
     except Exception as exc:  # pragma: no cover - depends on the host machine
+        # Log the real cause (module name, traceback) server-side; the client
+        # only gets the exception type, exactly like _load_model above. Without
+        # this line a missing dependency is invisible in the logs - the 503
+        # says "ModuleNotFoundError" but never *which* module.
+        logger.exception("Could not import the embedding stage")
         raise EmbeddingModelUnavailable(
             f"The embedding stage is unavailable: {type(exc).__name__}"
         ) from exc
@@ -238,6 +243,7 @@ def embed_query(text: str) -> list[float]:
     try:
         vectors = create_embeddings([text], model)
     except Exception as exc:
+        logger.exception("Could not encode the question")
         raise EmbeddingModelUnavailable(
             f"Could not encode the question: {type(exc).__name__}"
         ) from exc
