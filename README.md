@@ -196,3 +196,10 @@ Planned improvements include:
 <p align="center">
   Developed as part of the <strong>Thirduni Cohort 1 — Build with AI Program (2026)</strong>.
 </p>
+##  Presentation & Demo
+
+Explore the SAHLA project presentation and demo materials:
+
+🔗 **[View the Presentation and Demo](https://drive.google.com/drive/folders/1fUvbovEc808EJawweJ0kosML_uYqvWls?usp=sharing)**
+
+The folder contains the project presentation and demonstration materials.
