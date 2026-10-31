@@ -1,0 +1,24 @@
+sentence-transformers
+torch
+Django>=5.2,<6.0
+djangorestframework
+django-cors-headers
+gunicorn
+whitenoise
+dj-database-url
+psycopg[binary]
+pgvector
+python-dotenv
+gradio_client>=1.3.0,<2.0
+# --- RAG runtime (chatbot) -------------------------------------------
+# These are imported at request time by the chat endpoint's lazy chain:
+#   chatbot.rag_service -> rag.embeddings.encoder -> rag.ingestion.loader
+#   -> preprocessing.core.models (pydantic)
+# and only then the model itself (sentence-transformers, which pulls in torch).
+# pydantic was missing here, which raised ModuleNotFoundError on the first
+# message and surfaced as HTTP 503 "rag_unavailable". Keep the lower bound in
+# sync with the root requirements.txt.
+pydantic>=2.0.0
+sentence-transformers
+
+

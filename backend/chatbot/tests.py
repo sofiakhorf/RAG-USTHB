@@ -21,6 +21,7 @@ from __future__ import annotations
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -29,6 +30,7 @@ from chatbot.rag_service import (
     ANSWER_KIND_EXTRACTIVE,
     ANSWER_KIND_NO_EVIDENCE,
     Answer,
+    EmbeddingModelUnavailable,
 )
 from chatbot.views import DEFAULT_SESSION_TITLE
 
@@ -466,3 +468,60 @@ class AskQuestionTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["messages"], [])
+
+
+class EmbedQueryFailureContractTests(SimpleTestCase):
+    """``embed_query`` must type every embedding failure *and* log the cause.
+
+    Regression contract for the production 503: the deployed environment was
+    missing ``pydantic``, so the lazy import of ``rag.embeddings.encoder``
+    raised ``ModuleNotFoundError``. The client correctly received the typed
+    ``EmbeddingModelUnavailable`` (-> HTTP 503), but nothing was written to the
+    server logs, which made the root cause invisible from Render's dashboard.
+    These tests pin both halves: the typed error for the caller, the original
+    exception (type + traceback) for the operator.
+    """
+
+    def test_encoder_import_failure_is_typed_and_logged(self):
+        """A missing dependency surfaces as 503 material *and* a log record."""
+        from chatbot import rag_service
+
+        # ``None`` in sys.modules makes the import raise ModuleNotFoundError,
+        # which is exactly what Render did when pydantic was absent.
+        with mock.patch.dict("sys.modules", {"rag.embeddings.encoder": None}):
+            with mock.patch.object(
+                rag_service.logger, "exception"
+            ) as log:
+                with self.assertRaises(EmbeddingModelUnavailable) as ctx:
+                    rag_service.embed_query("Qu'est-ce qu'une vue ?")
+
+        self.assertEqual(
+            str(ctx.exception),
+            "The embedding stage is unavailable: ModuleNotFoundError",
+        )
+        log.assert_called_once()
+        self.assertIn("embedding stage", log.call_args[0][0])
+
+    def test_encode_failure_is_typed_and_logged(self):
+        """A model that explodes while encoding is also logged server-side."""
+        from chatbot import rag_service
+
+        exploding = mock.Mock(side_effect=RuntimeError("CUDA out of memory"))
+
+        with mock.patch(
+            "rag.embeddings.encoder.create_embeddings", exploding
+        ), mock.patch(
+            "chatbot.rag_service._load_model", return_value=mock.sentinel.model
+        ):
+            with mock.patch.object(
+                rag_service.logger, "exception"
+            ) as log:
+                with self.assertRaises(EmbeddingModelUnavailable) as ctx:
+                    rag_service.embed_query("Comment s'inscrire ?")
+
+        self.assertEqual(
+            str(ctx.exception),
+            "Could not encode the question: RuntimeError",
+        )
+        log.assert_called_once()
+        self.assertIn("encode the question", log.call_args[0][0])
