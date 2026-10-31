@@ -9,7 +9,7 @@ dj-database-url
 psycopg[binary]
 pgvector
 python-dotenv
-
+gradio_client
 # --- RAG runtime (chatbot) -------------------------------------------
 # These are imported at request time by the chat endpoint's lazy chain:
 #   chatbot.rag_service -> rag.embeddings.encoder -> rag.ingestion.loader
